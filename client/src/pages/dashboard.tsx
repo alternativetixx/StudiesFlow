@@ -15,6 +15,8 @@ import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Calendar as CalendarComponent } from "@/components/ui/calendar";
 import {
   Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent, SidebarGroupLabel,
   SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarProvider, SidebarTrigger,
@@ -23,18 +25,9 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { useTheme } from "@/components/theme-provider";
-import {
-  getSubjects, getExams, getTasks, createTask, updateTask, deleteTask,
-  getScheduleBlocks, getStickyNotes, createStickyNote, updateStickyNote, deleteStickyNote,
-  getFlashcards, createFlashcard, updateFlashcard,
-  getJournalEntries, createJournalEntry,
-  getRewards, createReward, updateReward,
-  getAIMessages, createAIMessage, clearAIMessages,
-  getUserStats, saveUserStats,
-  getPomodoroSettings, savePomodoroSettings
-} from "@/lib/db";
+import * as api from "@/lib/api";
 import { getQuoteOfDay, BADGES } from "@shared/schema";
-import type { Subject, Exam, Task, StickyNote, Flashcard, JournalEntry, Reward, AIMessage, UserStats, PomodoroSettings } from "@shared/schema";
+import type { Subject, Exam, Task, StickyNote, Flashcard, JournalEntry, Reward, AIMessage, CalendarEvent, Note, NoteShare, Notification } from "@shared/schema";
 import {
   BookOpen, Moon, Sun, Clock, Play, Pause, RotateCcw, Settings, Target, Calendar,
   Brain, MessageSquare, Send, Plus, Trash2, GripVertical, ChevronRight, ChevronDown,
@@ -42,7 +35,8 @@ import {
   StickyNote as StickyNoteIcon, Layers, PenLine, Smile, Frown, Meh, Heart, Coffee,
   Volume2, VolumeX, Home, ListTodo, CalendarDays, LayoutGrid, Award, BookMarked,
   LogOut, User, Crown, ExternalLink, X, Sparkles, Timer, Focus, Music, Bell,
-  Keyboard, HelpCircle, ChevronLeft, MoreVertical, Edit, Eye, EyeOff, RefreshCw
+  Keyboard, HelpCircle, ChevronLeft, MoreVertical, Edit, Eye, EyeOff, RefreshCw,
+  FileText, Share2, Users, MessageCircle, BellRing
 } from "lucide-react";
 
 const MOOD_OPTIONS = [
@@ -60,14 +54,19 @@ const PRIORITY_CONFIG = {
   low: { label: "Low", icon: CheckCircle, color: "bg-green-500/10 text-green-500 border-green-500/20" },
 };
 
+const NOTE_COLORS = [
+  "#8B5CF6", "#EC4899", "#F59E0B", "#10B981", "#3B82F6", "#6366F1"
+];
+
 const NAV_ITEMS = [
   { id: "dashboard", label: "Dashboard", icon: Home },
   { id: "tasks", label: "Tasks", icon: ListTodo },
-  { id: "schedule", label: "Schedule", icon: CalendarDays },
+  { id: "calendar", label: "Calendar", icon: CalendarDays },
   { id: "exams", label: "Exams", icon: Calendar },
   { id: "subjects", label: "Subjects", icon: BookMarked },
+  { id: "notes", label: "Notes", icon: FileText },
   { id: "flashcards", label: "Flashcards", icon: Layers },
-  { id: "notes", label: "Sticky Notes", icon: StickyNoteIcon },
+  { id: "sticky", label: "Sticky Notes", icon: StickyNoteIcon },
   { id: "analytics", label: "Analytics", icon: BarChart3 },
   { id: "rewards", label: "Rewards", icon: Award },
   { id: "journal", label: "Journal", icon: PenLine },
@@ -75,7 +74,7 @@ const NAV_ITEMS = [
 
 export default function DashboardPage() {
   const [, setLocation] = useLocation();
-  const { user, logout, isLoading: authLoading } = useAuth();
+  const { user, logout, isLoading: authLoading, refreshUser } = useAuth();
   const { toast } = useToast();
   const { theme, toggleTheme } = useTheme();
   
@@ -88,8 +87,14 @@ export default function DashboardPage() {
   const [journalEntries, setJournalEntries] = useState<JournalEntry[]>([]);
   const [rewards, setRewards] = useState<Reward[]>([]);
   const [aiMessages, setAiMessages] = useState<AIMessage[]>([]);
-  const [userStats, setUserStats] = useState<UserStats | null>(null);
-  const [pomodoroSettings, setPomodoroSettings] = useState<PomodoroSettings | null>(null);
+  const [notes, setNotes] = useState<Note[]>([]);
+  const [sharedNotes, setSharedNotes] = useState<Note[]>([]);
+  const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([]);
+  const [sharedEvents, setSharedEvents] = useState<CalendarEvent[]>([]);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [stats, setStats] = useState({ dailyStreak: 0, totalFocusMinutes: 0, todayFocusMinutes: 0, totalTasksCompleted: 0, badges: [] as string[] });
+  const [pomodoroSettings, setPomodoroSettings] = useState({ workDuration: 25, shortBreakDuration: 5, longBreakDuration: 15 });
   
   const [timerMode, setTimerMode] = useState<"work" | "shortBreak" | "longBreak">("work");
   const [timerSeconds, setTimerSeconds] = useState(25 * 60);
@@ -104,10 +109,11 @@ export default function DashboardPage() {
   const [newTaskTitle, setNewTaskTitle] = useState("");
   const [newTaskPriority, setNewTaskPriority] = useState<"critical" | "high" | "medium" | "low">("medium");
   const [newTaskSubject, setNewTaskSubject] = useState("");
+  const [newTaskDueDate, setNewTaskDueDate] = useState<Date | undefined>();
   
-  const [showAddNote, setShowAddNote] = useState(false);
-  const [newNoteContent, setNewNoteContent] = useState("");
-  const [newNoteColor, setNewNoteColor] = useState("#8B5CF6");
+  const [showAddStickyNote, setShowAddStickyNote] = useState(false);
+  const [newStickyContent, setNewStickyContent] = useState("");
+  const [newStickyColor, setNewStickyColor] = useState("#8B5CF6");
   
   const [showAddFlashcard, setShowAddFlashcard] = useState(false);
   const [newFlashcardFront, setNewFlashcardFront] = useState("");
@@ -126,10 +132,43 @@ export default function DashboardPage() {
   const [newRewardTarget, setNewRewardTarget] = useState(5);
   
   const [showSettings, setShowSettings] = useState(false);
-  const [showBattleMode, setShowBattleMode] = useState(false);
-  const [showShortcuts, setShowShortcuts] = useState(false);
+  const [showNotifications, setShowNotifications] = useState(false);
   
-  const [focusMusicPlaying, setFocusMusicPlaying] = useState(false);
+  const [showAddNote, setShowAddNote] = useState(false);
+  const [newNoteTitle, setNewNoteTitle] = useState("");
+  const [newNoteContent, setNewNoteContent] = useState("");
+  const [newNoteSubject, setNewNoteSubject] = useState("");
+  const [selectedNote, setSelectedNote] = useState<Note | null>(null);
+  const [noteShares, setNoteShares] = useState<NoteShare[]>([]);
+  const [showShareNote, setShowShareNote] = useState(false);
+  const [shareEmail, setShareEmail] = useState("");
+  const [shareRole, setShareRole] = useState<"viewer" | "commenter" | "editor">("viewer");
+  
+  const [showAddSubject, setShowAddSubject] = useState(false);
+  const [newSubjectName, setNewSubjectName] = useState("");
+  const [newSubjectColor, setNewSubjectColor] = useState("#8B5CF6");
+  const [newSubjectTopics, setNewSubjectTopics] = useState(0);
+  
+  const [showAddExam, setShowAddExam] = useState(false);
+  const [newExamName, setNewExamName] = useState("");
+  const [newExamDate, setNewExamDate] = useState<Date | undefined>();
+  const [newExamSubject, setNewExamSubject] = useState("");
+  const [newExamConfidence, setNewExamConfidence] = useState(50);
+  
+  const [showAddEvent, setShowAddEvent] = useState(false);
+  const [newEventTitle, setNewEventTitle] = useState("");
+  const [newEventDescription, setNewEventDescription] = useState("");
+  const [newEventType, setNewEventType] = useState<"event" | "task" | "reminder">("event");
+  const [newEventDate, setNewEventDate] = useState<Date | undefined>();
+  const [newEventTime, setNewEventTime] = useState("09:00");
+  const [newEventEndTime, setNewEventEndTime] = useState("10:00");
+  const [newEventAllDay, setNewEventAllDay] = useState(false);
+  const [newEventReminder, setNewEventReminder] = useState(15);
+  const [shareEventEmail, setShareEventEmail] = useState("");
+  const [showShareEvent, setShowShareEvent] = useState(false);
+  const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
+  
+  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
@@ -147,37 +186,49 @@ export default function DashboardPage() {
     }
     if (user) {
       loadData();
+      api.updateStreak();
     }
   }, [user, authLoading, setLocation]);
 
   const loadData = async () => {
     if (!user) return;
     try {
-      const [subjectsData, examsData, tasksData, notesData, flashcardsData, journalData, rewardsData, messagesData, statsData, settingsData] = await Promise.all([
-        getSubjects(user.id),
-        getExams(user.id),
-        getTasks(user.id),
-        getStickyNotes(user.id),
-        getFlashcards(user.id),
-        getJournalEntries(user.id),
-        getRewards(user.id),
-        getAIMessages(user.id),
-        getUserStats(user.id),
-        getPomodoroSettings(user.id),
+      const [
+        subjectsData, examsData, tasksData, stickyData, flashcardsData, 
+        journalData, rewardsData, messagesData, notesData, calendarData,
+        notificationsData, statsData, settingsData
+      ] = await Promise.all([
+        api.getSubjects(),
+        api.getExams(),
+        api.getTasks(),
+        api.getStickyNotes(),
+        api.getFlashcards(),
+        api.getJournalEntries(),
+        api.getRewards(),
+        api.getAIMessages(),
+        api.getNotes(),
+        api.getCalendarEvents(),
+        api.getNotifications(),
+        api.getStats(),
+        api.getPomodoroSettings(),
       ]);
       setSubjects(subjectsData);
       setExams(examsData);
       setTasks(tasksData);
-      setStickyNotes(notesData);
+      setStickyNotes(stickyData);
       setFlashcards(flashcardsData);
       setJournalEntries(journalData);
       setRewards(rewardsData);
       setAiMessages(messagesData);
-      setUserStats(statsData || null);
-      setPomodoroSettings(settingsData || null);
-      if (settingsData) {
-        setTimerSeconds(settingsData.workDuration * 60);
-      }
+      setNotes(notesData.ownNotes);
+      setSharedNotes(notesData.sharedNotes);
+      setCalendarEvents(calendarData.ownEvents);
+      setSharedEvents(calendarData.sharedEvents);
+      setNotifications(notificationsData.notifications);
+      setUnreadCount(notificationsData.unreadCount);
+      setStats(statsData);
+      setPomodoroSettings(settingsData);
+      setTimerSeconds(settingsData.workDuration * 60);
     } catch (error) {
       console.error("Failed to load data:", error);
     }
@@ -198,26 +249,20 @@ export default function DashboardPage() {
     setTimerRunning(false);
     if (timerMode === "work") {
       setPomodoroCount(c => c + 1);
-      if (userStats && user) {
-        const newStats = {
-          ...userStats,
-          totalFocusMinutes: userStats.totalFocusMinutes + (pomodoroSettings?.workDuration || 25),
-          todayFocusMinutes: userStats.todayFocusMinutes + (pomodoroSettings?.workDuration || 25),
-        };
-        await saveUserStats(newStats);
-        setUserStats(newStats);
-      }
+      await api.updateFocusTime(pomodoroSettings.workDuration);
+      setStats(prev => ({
+        ...prev,
+        totalFocusMinutes: prev.totalFocusMinutes + pomodoroSettings.workDuration,
+        todayFocusMinutes: prev.todayFocusMinutes + pomodoroSettings.workDuration
+      }));
       toast({ title: "Pomodoro Complete!", description: "Great work! Take a break." });
       const nextMode = (pomodoroCount + 1) % 4 === 0 ? "longBreak" : "shortBreak";
       setTimerMode(nextMode);
-      setTimerSeconds(nextMode === "longBreak" 
-        ? (pomodoroSettings?.longBreakDuration || 15) * 60 
-        : (pomodoroSettings?.shortBreakDuration || 5) * 60
-      );
+      setTimerSeconds(nextMode === "longBreak" ? pomodoroSettings.longBreakDuration * 60 : pomodoroSettings.shortBreakDuration * 60);
     } else {
       toast({ title: "Break Over!", description: "Ready to focus again?" });
       setTimerMode("work");
-      setTimerSeconds((pomodoroSettings?.workDuration || 25) * 60);
+      setTimerSeconds(pomodoroSettings.workDuration * 60);
     }
   };
 
@@ -229,28 +274,26 @@ export default function DashboardPage() {
 
   const getTimerProgress = () => {
     const total = timerMode === "work" 
-      ? (pomodoroSettings?.workDuration || 25) * 60
-      : timerMode === "shortBreak"
-        ? (pomodoroSettings?.shortBreakDuration || 5) * 60
-        : (pomodoroSettings?.longBreakDuration || 15) * 60;
+      ? pomodoroSettings.workDuration * 60
+      : timerMode === "shortBreak" ? pomodoroSettings.shortBreakDuration * 60 : pomodoroSettings.longBreakDuration * 60;
     return ((total - timerSeconds) / total) * 100;
   };
 
   const resetTimer = () => {
     setTimerRunning(false);
     setTimerMode("work");
-    setTimerSeconds((pomodoroSettings?.workDuration || 25) * 60);
+    setTimerSeconds(pomodoroSettings.workDuration * 60);
   };
 
   const handleAddTask = async () => {
-    if (!user || !newTaskTitle.trim()) return;
+    if (!newTaskTitle.trim()) return;
     try {
-      const task = await createTask({
-        userId: user.id,
+      const task = await api.createTask({
         title: newTaskTitle,
         priority: newTaskPriority,
         status: "pending",
-        subjectId: newTaskSubject || undefined,
+        subjectId: newTaskSubject ? parseInt(newTaskSubject) : undefined,
+        dueDate: newTaskDueDate?.toISOString(),
         tags: [],
         order: tasks.length,
       });
@@ -258,6 +301,7 @@ export default function DashboardPage() {
       setNewTaskTitle("");
       setNewTaskPriority("medium");
       setNewTaskSubject("");
+      setNewTaskDueDate(undefined);
       setShowAddTask(false);
       toast({ title: "Task added!" });
     } catch (error) {
@@ -268,36 +312,20 @@ export default function DashboardPage() {
   const handleToggleTask = async (task: Task) => {
     try {
       const newStatus = task.status === "completed" ? "pending" : "completed";
-      const updated = await updateTask({
-        ...task,
-        status: newStatus,
-        completedAt: newStatus === "completed" ? new Date().toISOString() : undefined,
-      });
+      const updated = await api.updateTask(task.id, { status: newStatus });
       setTasks(tasks.map(t => t.id === task.id ? updated : t));
-      if (newStatus === "completed" && userStats && user) {
-        const newStats = { ...userStats, totalTasksCompleted: userStats.totalTasksCompleted + 1 };
-        await saveUserStats(newStats);
-        setUserStats(newStats);
-        const activeRewards = rewards.filter(r => !r.isCompleted);
-        for (const reward of activeRewards) {
-          const newProgress = reward.currentProgress + 1;
-          if (newProgress >= reward.targetTasks) {
-            await updateReward({ ...reward, currentProgress: newProgress, isCompleted: true });
-            toast({ title: "Reward Unlocked!", description: reward.reward });
-          } else {
-            await updateReward({ ...reward, currentProgress: newProgress });
-          }
-        }
-        loadData();
+      if (newStatus === "completed") {
+        setStats(prev => ({ ...prev, totalTasksCompleted: prev.totalTasksCompleted + 1 }));
+        toast({ title: "Task completed!" });
       }
     } catch (error) {
       toast({ title: "Error", description: "Failed to update task", variant: "destructive" });
     }
   };
 
-  const handleDeleteTask = async (taskId: string) => {
+  const handleDeleteTask = async (taskId: number) => {
     try {
-      await deleteTask(taskId);
+      await api.deleteTask(taskId);
       setTasks(tasks.filter(t => t.id !== taskId));
       toast({ title: "Task deleted" });
     } catch (error) {
@@ -305,40 +333,249 @@ export default function DashboardPage() {
     }
   };
 
-  const handleSendAIMessage = async () => {
-    if (!user || !aiInput.trim()) return;
-    setAiLoading(true);
+  const handleAddSubject = async () => {
+    if (!newSubjectName.trim()) return;
     try {
-      const userMessage = await createAIMessage({
-        userId: user.id,
-        role: "user",
-        content: aiInput,
-        timestamp: new Date().toISOString(),
+      const subject = await api.createSubject({
+        name: newSubjectName,
+        color: newSubjectColor,
+        totalTopics: newSubjectTopics,
+        coveredTopics: 0,
+        studyHours: 0,
       });
-      setAiMessages([...aiMessages, userMessage]);
-      setAiInput("");
+      setSubjects([...subjects, subject]);
+      setNewSubjectName("");
+      setNewSubjectColor("#8B5CF6");
+      setNewSubjectTopics(0);
+      setShowAddSubject(false);
+      toast({ title: "Subject added!" });
+    } catch (error) {
+      toast({ title: "Error", description: "Failed to add subject", variant: "destructive" });
+    }
+  };
 
-      const response = await fetch("/api/ai/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: aiInput, userId: user.id }),
+  const handleDeleteSubject = async (id: number) => {
+    try {
+      await api.deleteSubject(id);
+      setSubjects(subjects.filter(s => s.id !== id));
+      toast({ title: "Subject deleted" });
+    } catch (error) {
+      toast({ title: "Error", description: "Failed to delete subject", variant: "destructive" });
+    }
+  };
+
+  const handleAddExam = async () => {
+    if (!newExamName.trim() || !newExamDate) return;
+    try {
+      const exam = await api.createExam({
+        name: newExamName,
+        date: newExamDate.toISOString(),
+        subjectId: newExamSubject ? parseInt(newExamSubject) : undefined,
+        confidence: newExamConfidence,
+        weight: 100,
       });
+      setExams([...exams, exam]);
+      setNewExamName("");
+      setNewExamDate(undefined);
+      setNewExamSubject("");
+      setNewExamConfidence(50);
+      setShowAddExam(false);
+      toast({ title: "Exam added!" });
+    } catch (error) {
+      toast({ title: "Error", description: "Failed to add exam", variant: "destructive" });
+    }
+  };
+
+  const handleDeleteExam = async (id: number) => {
+    try {
+      await api.deleteExam(id);
+      setExams(exams.filter(e => e.id !== id));
+      toast({ title: "Exam deleted" });
+    } catch (error) {
+      toast({ title: "Error", description: "Failed to delete exam", variant: "destructive" });
+    }
+  };
+
+  const handleAddNote = async () => {
+    if (!newNoteTitle.trim()) return;
+    try {
+      const note = await api.createNote({
+        title: newNoteTitle,
+        content: newNoteContent,
+        subjectId: newNoteSubject ? parseInt(newNoteSubject) : undefined,
+      });
+      setNotes([note, ...notes]);
+      setNewNoteTitle("");
+      setNewNoteContent("");
+      setNewNoteSubject("");
+      setShowAddNote(false);
+      toast({ title: "Note created!" });
+    } catch (error) {
+      toast({ title: "Error", description: "Failed to create note", variant: "destructive" });
+    }
+  };
+
+  const handleUpdateNote = async (id: number, updates: Partial<Note>) => {
+    try {
+      const updated = await api.updateNote(id, updates);
+      setNotes(notes.map(n => n.id === id ? updated : n));
+      if (selectedNote?.id === id) setSelectedNote(updated);
+    } catch (error) {
+      toast({ title: "Error", description: "Failed to update note", variant: "destructive" });
+    }
+  };
+
+  const handleDeleteNote = async (id: number) => {
+    try {
+      await api.deleteNote(id);
+      setNotes(notes.filter(n => n.id !== id));
+      setSelectedNote(null);
+      toast({ title: "Note deleted" });
+    } catch (error) {
+      toast({ title: "Error", description: "Failed to delete note", variant: "destructive" });
+    }
+  };
+
+  const handleShareNote = async () => {
+    if (!selectedNote || !shareEmail.trim()) return;
+    try {
+      const share = await api.shareNote(selectedNote.id, shareEmail, shareRole);
+      setNoteShares([...noteShares, share]);
+      setShareEmail("");
+      toast({ title: "Note shared!", description: `Shared with ${shareEmail}` });
+    } catch (error) {
+      toast({ title: "Error", description: "Failed to share note", variant: "destructive" });
+    }
+  };
+
+  const handleUpdateNoteShare = async (shareId: number, role: string) => {
+    try {
+      const updated = await api.updateNoteShare(shareId, { role: role as "viewer" | "commenter" | "editor" });
+      setNoteShares(noteShares.map(s => s.id === shareId ? updated : s));
+      toast({ title: "Access updated" });
+    } catch (error) {
+      toast({ title: "Error", description: "Failed to update access", variant: "destructive" });
+    }
+  };
+
+  const handleRemoveNoteShare = async (shareId: number) => {
+    try {
+      await api.deleteNoteShare(shareId);
+      setNoteShares(noteShares.filter(s => s.id !== shareId));
+      toast({ title: "Access removed" });
+    } catch (error) {
+      toast({ title: "Error", description: "Failed to remove access", variant: "destructive" });
+    }
+  };
+
+  const loadNoteDetails = async (note: Note) => {
+    try {
+      const details = await api.getNote(note.id);
+      setSelectedNote(details.note);
+      setNoteShares(details.shares);
+    } catch (error) {
+      console.error("Failed to load note details:", error);
+    }
+  };
+
+  const handleAddEvent = async () => {
+    if (!newEventTitle.trim() || !newEventDate) return;
+    try {
+      const startTime = new Date(newEventDate);
+      if (!newEventAllDay) {
+        const [hours, mins] = newEventTime.split(":").map(Number);
+        startTime.setHours(hours, mins, 0, 0);
+      }
       
-      const data = await response.json();
-      const assistantMessage = await createAIMessage({
-        userId: user.id,
-        role: "assistant",
-        content: data.message || "I'm here to help with your studies! Ask me anything about your subjects, and I'll do my best to explain.",
-        timestamp: new Date().toISOString(),
+      let endTime: Date | undefined;
+      if (!newEventAllDay) {
+        endTime = new Date(newEventDate);
+        const [endHours, endMins] = newEventEndTime.split(":").map(Number);
+        endTime.setHours(endHours, endMins, 0, 0);
+      }
+
+      const event = await api.createCalendarEvent({
+        title: newEventTitle,
+        description: newEventDescription,
+        type: newEventType,
+        startTime: startTime.toISOString(),
+        endTime: endTime?.toISOString(),
+        allDay: newEventAllDay,
+        reminderMinutes: newEventReminder > 0 ? newEventReminder : undefined,
       });
+      setCalendarEvents([...calendarEvents, event]);
+      setNewEventTitle("");
+      setNewEventDescription("");
+      setNewEventType("event");
+      setNewEventDate(undefined);
+      setNewEventTime("09:00");
+      setNewEventEndTime("10:00");
+      setNewEventAllDay(false);
+      setNewEventReminder(15);
+      setShowAddEvent(false);
+      toast({ title: "Event added!" });
+    } catch (error) {
+      toast({ title: "Error", description: "Failed to add event", variant: "destructive" });
+    }
+  };
+
+  const handleDeleteEvent = async (id: number) => {
+    try {
+      await api.deleteCalendarEvent(id);
+      setCalendarEvents(calendarEvents.filter(e => e.id !== id));
+      setSelectedEvent(null);
+      toast({ title: "Event deleted" });
+    } catch (error) {
+      toast({ title: "Error", description: "Failed to delete event", variant: "destructive" });
+    }
+  };
+
+  const handleShareEvent = async () => {
+    if (!selectedEvent || !shareEventEmail.trim()) return;
+    try {
+      await api.shareCalendarEvent(selectedEvent.id, shareEventEmail);
+      setShareEventEmail("");
+      setShowShareEvent(false);
+      toast({ title: "Event shared!", description: `Invitation sent to ${shareEventEmail}` });
+    } catch (error) {
+      toast({ title: "Error", description: "Failed to share event", variant: "destructive" });
+    }
+  };
+
+  const handleSendAIMessage = async () => {
+    if (!aiInput.trim()) return;
+    setAiLoading(true);
+    const userMsg = aiInput;
+    setAiInput("");
+    
+    try {
+      const tempUserMessage: AIMessage = {
+        id: Date.now(),
+        userId: user!.id,
+        role: "user",
+        content: userMsg,
+        createdAt: new Date(),
+      };
+      setAiMessages(prev => [...prev, tempUserMessage]);
+
+      const response = await api.sendAIMessage(userMsg);
+      
+      const assistantMessage: AIMessage = {
+        id: Date.now() + 1,
+        userId: user!.id,
+        role: "assistant",
+        content: response.message,
+        createdAt: new Date(),
+      };
       setAiMessages(prev => [...prev, assistantMessage]);
     } catch (error) {
-      const fallbackMessage = await createAIMessage({
-        userId: user.id,
+      const fallbackMessage: AIMessage = {
+        id: Date.now() + 1,
+        userId: user!.id,
         role: "assistant",
         content: "I'm your AI study assistant! I can help you understand concepts, generate quiz questions, create study plans, and more. What would you like to learn about today?",
-        timestamp: new Date().toISOString(),
-      });
+        createdAt: new Date(),
+      };
       setAiMessages(prev => [...prev, fallbackMessage]);
     } finally {
       setAiLoading(false);
@@ -347,29 +584,28 @@ export default function DashboardPage() {
   };
 
   const handleAddStickyNote = async () => {
-    if (!user || !newNoteContent.trim()) return;
+    if (!newStickyContent.trim()) return;
     try {
-      const note = await createStickyNote({
-        userId: user.id,
-        content: newNoteContent,
-        color: newNoteColor,
+      const note = await api.createStickyNote({
+        content: newStickyContent,
+        color: newStickyColor,
         x: Math.random() * 200,
         y: Math.random() * 200,
         width: 200,
         height: 200,
       });
       setStickyNotes([...stickyNotes, note]);
-      setNewNoteContent("");
-      setShowAddNote(false);
+      setNewStickyContent("");
+      setShowAddStickyNote(false);
       toast({ title: "Note added!" });
     } catch (error) {
       toast({ title: "Error", description: "Failed to add note", variant: "destructive" });
     }
   };
 
-  const handleDeleteNote = async (noteId: string) => {
+  const handleDeleteStickyNote = async (noteId: number) => {
     try {
-      await deleteStickyNote(noteId);
+      await api.deleteStickyNote(noteId);
       setStickyNotes(stickyNotes.filter(n => n.id !== noteId));
       toast({ title: "Note deleted" });
     } catch (error) {
@@ -378,13 +614,12 @@ export default function DashboardPage() {
   };
 
   const handleAddFlashcard = async () => {
-    if (!user || !newFlashcardFront.trim() || !newFlashcardBack.trim()) return;
+    if (!newFlashcardFront.trim() || !newFlashcardBack.trim()) return;
     try {
-      const card = await createFlashcard({
-        userId: user.id,
+      const card = await api.createFlashcard({
         front: newFlashcardFront,
         back: newFlashcardBack,
-        subjectId: newFlashcardSubject || undefined,
+        subjectId: newFlashcardSubject ? parseInt(newFlashcardSubject) : undefined,
         box: 1,
         nextReviewDate: new Date().toISOString(),
       });
@@ -407,8 +642,7 @@ export default function DashboardPage() {
       const daysUntilReview = Math.pow(2, newBox - 1);
       const nextDate = new Date();
       nextDate.setDate(nextDate.getDate() + daysUntilReview);
-      await updateFlashcard({
-        ...card,
+      await api.updateFlashcard(card.id, {
         box: newBox,
         lastReviewDate: new Date().toISOString(),
         nextReviewDate: nextDate.toISOString(),
@@ -427,10 +661,9 @@ export default function DashboardPage() {
   };
 
   const handleAddJournalEntry = async () => {
-    if (!user || !journalContent.trim()) return;
+    if (!journalContent.trim()) return;
     try {
-      const entry = await createJournalEntry({
-        userId: user.id,
+      const entry = await api.createJournalEntry({
         date: new Date().toISOString().split("T")[0],
         mood: journalMood,
         content: journalContent,
@@ -446,10 +679,9 @@ export default function DashboardPage() {
   };
 
   const handleAddReward = async () => {
-    if (!user || !newRewardName.trim()) return;
+    if (!newRewardName.trim()) return;
     try {
-      const reward = await createReward({
-        userId: user.id,
+      const reward = await api.createReward({
         targetTasks: newRewardTarget,
         reward: newRewardName,
         currentProgress: 0,
@@ -462,6 +694,26 @@ export default function DashboardPage() {
       toast({ title: "Reward added!" });
     } catch (error) {
       toast({ title: "Error", description: "Failed to add reward", variant: "destructive" });
+    }
+  };
+
+  const handleMarkNotificationRead = async (id: number) => {
+    try {
+      await api.markNotificationRead(id);
+      setNotifications(notifications.map(n => n.id === id ? { ...n, isRead: true } : n));
+      setUnreadCount(Math.max(0, unreadCount - 1));
+    } catch (error) {
+      console.error("Failed to mark notification as read:", error);
+    }
+  };
+
+  const handleMarkAllRead = async () => {
+    try {
+      await api.markAllNotificationsRead();
+      setNotifications(notifications.map(n => ({ ...n, isRead: true })));
+      setUnreadCount(0);
+    } catch (error) {
+      console.error("Failed to mark all as read:", error);
     }
   };
 
@@ -483,6 +735,14 @@ export default function DashboardPage() {
     const date = new Date(dateStr);
     const diff = date.getTime() - now.getTime();
     return Math.ceil(diff / (1000 * 60 * 60 * 24));
+  };
+
+  const getEventsForDate = (date: Date) => {
+    const dateStr = date.toISOString().split("T")[0];
+    return [...calendarEvents, ...sharedEvents].filter(e => {
+      const eventDate = new Date(e.startTime).toISOString().split("T")[0];
+      return eventDate === dateStr;
+    });
   };
 
   const pendingTasks = tasks.filter(t => t.status !== "completed");
@@ -551,21 +811,21 @@ export default function DashboardPage() {
                     <Flame className="w-4 h-4 text-orange-500" />
                     <span className="text-sm">Streak</span>
                   </div>
-                  <span className="font-bold">{userStats?.dailyStreak || 0}</span>
+                  <span className="font-bold">{stats.dailyStreak}</span>
                 </div>
                 <div className="flex items-center justify-between p-2 rounded-lg bg-sidebar-accent/50">
                   <div className="flex items-center gap-2">
                     <Clock className="w-4 h-4 text-primary" />
                     <span className="text-sm">Focus Today</span>
                   </div>
-                  <span className="font-bold">{userStats?.todayFocusMinutes || 0}m</span>
+                  <span className="font-bold">{stats.todayFocusMinutes}m</span>
                 </div>
                 <div className="flex items-center justify-between p-2 rounded-lg bg-sidebar-accent/50">
                   <div className="flex items-center gap-2">
                     <CheckCircle className="w-4 h-4 text-green-500" />
                     <span className="text-sm">Tasks Done</span>
                   </div>
-                  <span className="font-bold">{completedTasks.length}</span>
+                  <span className="font-bold">{stats.totalTasksCompleted}</span>
                 </div>
               </SidebarGroupContent>
             </SidebarGroup>
@@ -578,319 +838,287 @@ export default function DashboardPage() {
             </Button>
             <Button variant="ghost" size="sm" className="w-full gap-2 text-muted-foreground" onClick={handleLogout} data-testid="button-logout">
               <LogOut className="w-4 h-4" />
-              Logout
+              Log Out
             </Button>
           </SidebarFooter>
         </Sidebar>
 
-        <div className="flex-1 flex flex-col min-w-0">
-          <header className="flex items-center justify-between gap-4 p-4 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 sticky top-0 z-40">
+        <div className="flex-1 flex flex-col overflow-hidden">
+          <header className="flex items-center justify-between gap-4 p-4 border-b bg-background/80 backdrop-blur-sm sticky top-0 z-50">
             <div className="flex items-center gap-4">
               <SidebarTrigger data-testid="button-sidebar-toggle" />
               <div>
-                <h1 className="text-xl font-bold capitalize">{activeView}</h1>
+                <h1 className="text-xl font-bold capitalize">{activeView === "sticky" ? "Sticky Notes" : activeView}</h1>
                 <p className="text-sm text-muted-foreground hidden sm:block">
-                  {new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}
+                  {quote.quote.slice(0, 60)}...
                 </p>
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <Button variant="ghost" size="icon" onClick={() => setShowShortcuts(true)} data-testid="button-shortcuts">
-                <Keyboard className="w-5 h-5" />
-              </Button>
+              <Popover open={showNotifications} onOpenChange={setShowNotifications}>
+                <PopoverTrigger asChild>
+                  <Button variant="ghost" size="icon" className="relative" data-testid="button-notifications">
+                    <Bell className="w-5 h-5" />
+                    {unreadCount > 0 && (
+                      <span className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-destructive text-destructive-foreground text-xs flex items-center justify-center">
+                        {unreadCount > 9 ? "9+" : unreadCount}
+                      </span>
+                    )}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-80" align="end">
+                  <div className="flex items-center justify-between mb-2">
+                    <h3 className="font-semibold">Notifications</h3>
+                    {unreadCount > 0 && (
+                      <Button variant="ghost" size="sm" onClick={handleMarkAllRead}>
+                        Mark all read
+                      </Button>
+                    )}
+                  </div>
+                  <ScrollArea className="h-64">
+                    {notifications.length === 0 ? (
+                      <p className="text-sm text-muted-foreground text-center py-4">No notifications</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {notifications.slice(0, 10).map((notif) => (
+                          <div
+                            key={notif.id}
+                            className={`p-2 rounded-lg cursor-pointer hover-elevate ${!notif.isRead ? "bg-primary/5" : ""}`}
+                            onClick={() => handleMarkNotificationRead(notif.id)}
+                          >
+                            <div className="flex items-start gap-2">
+                              <div className={`w-2 h-2 rounded-full mt-2 ${!notif.isRead ? "bg-primary" : "bg-muted"}`} />
+                              <div className="flex-1">
+                                <p className="text-sm font-medium">{notif.title}</p>
+                                <p className="text-xs text-muted-foreground">{notif.message}</p>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </ScrollArea>
+                </PopoverContent>
+              </Popover>
+
               <Button variant="ghost" size="icon" onClick={toggleTheme} data-testid="button-theme-toggle">
                 {theme === "dark" ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
               </Button>
-              {user?.isPremium && (
-                <Badge variant="secondary" className="gap-1">
-                  <Crown className="w-3 h-3" />
-                  Pro
-                </Badge>
-              )}
+              <Button variant="default" size="icon" onClick={() => setShowAIChat(true)} data-testid="button-ai-chat">
+                <Sparkles className="w-5 h-5" />
+              </Button>
             </div>
           </header>
 
-          <main className="flex-1 overflow-auto p-4 md:p-6">
+          <main className="flex-1 overflow-auto p-6">
             {activeView === "dashboard" && (
               <div className="space-y-6">
-                <Card className="glass-card border-primary/20 overflow-visible">
-                  <CardContent className="p-6">
-                    <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-                      <div className="flex-1">
-                        <p className="text-sm text-muted-foreground mb-1">Today's Motivation</p>
-                        <p className="text-lg font-medium italic">"{quote.quote}"</p>
-                        <p className="text-sm text-muted-foreground mt-1">- {quote.author}</p>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                  <Card>
+                    <CardContent className="p-6">
+                      <div className="flex items-center gap-4">
+                        <div className="w-12 h-12 rounded-xl bg-orange-500/10 flex items-center justify-center">
+                          <Flame className="w-6 h-6 text-orange-500" />
+                        </div>
+                        <div>
+                          <p className="text-3xl font-bold">{stats.dailyStreak}</p>
+                          <p className="text-sm text-muted-foreground">Day Streak</p>
+                        </div>
                       </div>
-                      <Button variant="outline" className="gap-2" onClick={() => setShowBattleMode(true)} data-testid="button-battle-mode">
-                        <Focus className="w-4 h-4" />
-                        Battle Mode
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
+                    </CardContent>
+                  </Card>
+                  <Card>
+                    <CardContent className="p-6">
+                      <div className="flex items-center gap-4">
+                        <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center">
+                          <Clock className="w-6 h-6 text-primary" />
+                        </div>
+                        <div>
+                          <p className="text-3xl font-bold">{stats.todayFocusMinutes}</p>
+                          <p className="text-sm text-muted-foreground">Focus Today (min)</p>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                  <Card>
+                    <CardContent className="p-6">
+                      <div className="flex items-center gap-4">
+                        <div className="w-12 h-12 rounded-xl bg-green-500/10 flex items-center justify-center">
+                          <CheckCircle className="w-6 h-6 text-green-500" />
+                        </div>
+                        <div>
+                          <p className="text-3xl font-bold">{stats.totalTasksCompleted}</p>
+                          <p className="text-sm text-muted-foreground">Tasks Done</p>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                  <Card>
+                    <CardContent className="p-6">
+                      <div className="flex items-center gap-4">
+                        <div className="w-12 h-12 rounded-xl bg-chart-3/10 flex items-center justify-center">
+                          <Trophy className="w-6 h-6 text-chart-3" />
+                        </div>
+                        <div>
+                          <p className="text-3xl font-bold">{stats.badges?.length || 0}</p>
+                          <p className="text-sm text-muted-foreground">Badges</p>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </div>
 
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                   <Card className="lg:col-span-2">
-                    <CardHeader className="flex flex-row items-center justify-between gap-4 space-y-0 pb-2">
-                      <CardTitle className="text-lg flex items-center gap-2">
-                        <Clock className="w-5 h-5 text-primary" />
-                        Pomodoro Timer
-                      </CardTitle>
-                      <div className="flex items-center gap-2">
-                        <Button variant="ghost" size="icon" onClick={() => setFocusMusicPlaying(!focusMusicPlaying)} data-testid="button-focus-music">
-                          {focusMusicPlaying ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
-                        </Button>
+                    <CardHeader className="flex flex-row items-center justify-between gap-2">
+                      <CardTitle>Pomodoro Timer</CardTitle>
+                      <div className="flex gap-1">
+                        {["work", "shortBreak", "longBreak"].map((mode) => (
+                          <Button
+                            key={mode}
+                            variant={timerMode === mode ? "default" : "ghost"}
+                            size="sm"
+                            onClick={() => {
+                              setTimerMode(mode as any);
+                              setTimerRunning(false);
+                              setTimerSeconds(
+                                mode === "work" ? pomodoroSettings.workDuration * 60 :
+                                mode === "shortBreak" ? pomodoroSettings.shortBreakDuration * 60 :
+                                pomodoroSettings.longBreakDuration * 60
+                              );
+                            }}
+                          >
+                            {mode === "work" ? "Focus" : mode === "shortBreak" ? "Short" : "Long"}
+                          </Button>
+                        ))}
                       </div>
                     </CardHeader>
                     <CardContent>
-                      <div className="flex flex-col items-center py-6">
+                      <div className="flex flex-col items-center">
                         <div className="relative w-48 h-48 mb-6">
-                          <svg className="w-full h-full progress-ring" viewBox="0 0 100 100">
+                          <svg className="w-full h-full transform -rotate-90">
+                            <circle cx="96" cy="96" r="88" stroke="currentColor" strokeWidth="8" fill="none" className="text-muted" />
                             <circle
-                              cx="50" cy="50" r="45"
-                              fill="none"
-                              stroke="hsl(var(--muted))"
-                              strokeWidth="6"
-                            />
-                            <circle
-                              cx="50" cy="50" r="45"
-                              fill="none"
-                              stroke="hsl(var(--primary))"
-                              strokeWidth="6"
+                              cx="96" cy="96" r="88"
+                              stroke="currentColor" strokeWidth="8" fill="none"
+                              className="text-primary"
+                              strokeDasharray={553}
+                              strokeDashoffset={553 - (553 * getTimerProgress()) / 100}
                               strokeLinecap="round"
-                              strokeDasharray={`${getTimerProgress() * 2.83} 283`}
-                              className="transition-all duration-1000"
                             />
                           </svg>
                           <div className="absolute inset-0 flex flex-col items-center justify-center">
-                            <span className="text-4xl font-bold" data-testid="text-timer">{formatTime(timerSeconds)}</span>
-                            <span className="text-sm text-muted-foreground capitalize">{timerMode.replace(/([A-Z])/g, " $1")}</span>
+                            <span className="text-4xl font-bold">{formatTime(timerSeconds)}</span>
+                            <span className="text-sm text-muted-foreground capitalize">{timerMode === "shortBreak" ? "Short Break" : timerMode === "longBreak" ? "Long Break" : "Focus"}</span>
                           </div>
                         </div>
-                        
-                        <div className="flex items-center gap-4">
-                          <Button
-                            size="lg"
-                            onClick={() => setTimerRunning(!timerRunning)}
-                            className="gap-2 min-w-[120px]"
-                            data-testid="button-timer-toggle"
-                          >
-                            {timerRunning ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5" />}
+                        <div className="flex gap-2">
+                          <Button size="lg" onClick={() => setTimerRunning(!timerRunning)} data-testid="button-timer-toggle">
+                            {timerRunning ? <Pause className="w-5 h-5 mr-2" /> : <Play className="w-5 h-5 mr-2" />}
                             {timerRunning ? "Pause" : "Start"}
                           </Button>
-                          <Button variant="outline" size="icon" onClick={resetTimer} data-testid="button-timer-reset">
-                            <RotateCcw className="w-4 h-4" />
+                          <Button variant="outline" size="lg" onClick={resetTimer} data-testid="button-timer-reset">
+                            <RotateCcw className="w-5 h-5" />
                           </Button>
                         </div>
-                        
-                        <div className="flex items-center gap-2 mt-4">
-                          <span className="text-sm text-muted-foreground">Sessions: {pomodoroCount}</span>
-                          <Separator orientation="vertical" className="h-4" />
-                          <span className="text-sm text-muted-foreground">Total: {userStats?.totalFocusMinutes || 0}m</span>
-                        </div>
+                        <p className="mt-4 text-sm text-muted-foreground">
+                          Pomodoros completed today: {pomodoroCount}
+                        </p>
                       </div>
                     </CardContent>
                   </Card>
 
                   <Card>
-                    <CardHeader className="pb-2">
-                      <CardTitle className="text-lg flex items-center gap-2">
-                        <Calendar className="w-5 h-5 text-primary" />
-                        Upcoming Exams
-                      </CardTitle>
+                    <CardHeader>
+                      <CardTitle>Upcoming Exams</CardTitle>
                     </CardHeader>
-                    <CardContent>
-                      <div className="space-y-3">
-                        {getUpcomingExams().length === 0 ? (
-                          <p className="text-sm text-muted-foreground text-center py-4">No upcoming exams</p>
-                        ) : (
-                          getUpcomingExams().map((exam) => {
-                            const subject = subjects.find(s => s.id === exam.subjectId);
-                            const daysLeft = getDaysUntil(exam.date);
-                            return (
-                              <div key={exam.id} className="p-3 rounded-lg bg-muted/50 space-y-2">
-                                <div className="flex items-center justify-between gap-2">
-                                  <div className="flex items-center gap-2 min-w-0">
-                                    {subject && (
-                                      <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: subject.color }} />
-                                    )}
-                                    <span className="font-medium truncate">{exam.name}</span>
-                                  </div>
-                                  <Badge variant={daysLeft <= 7 ? "destructive" : "secondary"}>
-                                    {daysLeft}d
-                                  </Badge>
-                                </div>
-                                <Progress value={exam.confidence} className="h-2" />
-                                <p className="text-xs text-muted-foreground">{exam.confidence}% confidence</p>
+                    <CardContent className="space-y-3">
+                      {getUpcomingExams().map((exam) => {
+                        const subject = subjects.find(s => s.id === exam.subjectId);
+                        const daysLeft = getDaysUntil(exam.date);
+                        return (
+                          <div key={exam.id} className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
+                            <div className="flex items-center gap-3">
+                              {subject && (
+                                <div className="w-3 h-3 rounded-full" style={{ backgroundColor: subject.color }} />
+                              )}
+                              <div>
+                                <p className="font-medium">{exam.name}</p>
+                                <p className="text-xs text-muted-foreground">{subject?.name}</p>
                               </div>
-                            );
-                          })
-                        )}
-                      </div>
+                            </div>
+                            <Badge variant={daysLeft <= 3 ? "destructive" : daysLeft <= 7 ? "secondary" : "outline"}>
+                              {daysLeft} days
+                            </Badge>
+                          </div>
+                        );
+                      })}
+                      {exams.length === 0 && (
+                        <p className="text-sm text-muted-foreground text-center py-4">No upcoming exams</p>
+                      )}
                     </CardContent>
                   </Card>
                 </div>
 
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                   <Card>
-                    <CardHeader className="flex flex-row items-center justify-between gap-4 space-y-0 pb-2">
-                      <CardTitle className="text-lg flex items-center gap-2">
-                        <ListTodo className="w-5 h-5 text-primary" />
-                        Today's Tasks
-                      </CardTitle>
-                      <Button size="sm" onClick={() => setShowAddTask(true)} data-testid="button-add-task">
-                        <Plus className="w-4 h-4" />
+                    <CardHeader className="flex flex-row items-center justify-between gap-2">
+                      <CardTitle>Today's Tasks</CardTitle>
+                      <Button size="sm" onClick={() => setShowAddTask(true)}>
+                        <Plus className="w-4 h-4 mr-1" />
+                        Add
                       </Button>
                     </CardHeader>
                     <CardContent>
-                      <ScrollArea className="h-[300px]">
-                        <div className="space-y-2">
-                          {pendingTasks.slice(0, 8).map((task) => {
-                            const config = PRIORITY_CONFIG[task.priority];
-                            const subject = subjects.find(s => s.id === task.subjectId);
-                            return (
-                              <div
-                                key={task.id}
-                                className="flex items-center gap-3 p-3 rounded-lg bg-muted/50 group"
-                              >
-                                <Checkbox
-                                  checked={task.status === "completed"}
-                                  onCheckedChange={() => handleToggleTask(task)}
-                                  data-testid={`checkbox-task-${task.id}`}
-                                />
-                                <div className="flex-1 min-w-0">
-                                  <p className={`font-medium truncate ${task.status === "completed" ? "line-through text-muted-foreground" : ""}`}>
-                                    {task.title}
-                                  </p>
-                                  <div className="flex items-center gap-2 mt-1">
-                                    <Badge variant="outline" className={`text-xs ${config.color}`}>
-                                      <config.icon className="w-3 h-3 mr-1" />
-                                      {config.label}
-                                    </Badge>
-                                    {subject && (
-                                      <div className="flex items-center gap-1">
-                                        <div className="w-2 h-2 rounded-full" style={{ backgroundColor: subject.color }} />
-                                        <span className="text-xs text-muted-foreground">{subject.name}</span>
-                                      </div>
-                                    )}
-                                  </div>
-                                </div>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="opacity-0 group-hover:opacity-100 transition-opacity"
-                                  onClick={() => handleDeleteTask(task.id)}
-                                  data-testid={`button-delete-task-${task.id}`}
-                                >
-                                  <Trash2 className="w-4 h-4 text-destructive" />
-                                </Button>
+                      <div className="space-y-2">
+                        {todayTasks.slice(0, 5).map((task) => {
+                          const config = PRIORITY_CONFIG[task.priority];
+                          const PriorityIcon = config.icon;
+                          return (
+                            <div key={task.id} className="flex items-center gap-3 p-2 rounded-lg hover-elevate">
+                              <Checkbox
+                                checked={task.status === "completed"}
+                                onCheckedChange={() => handleToggleTask(task)}
+                              />
+                              <div className="flex-1">
+                                <p className={`text-sm ${task.status === "completed" ? "line-through text-muted-foreground" : ""}`}>
+                                  {task.title}
+                                </p>
                               </div>
-                            );
-                          })}
-                          {pendingTasks.length === 0 && (
-                            <div className="text-center py-8 text-muted-foreground">
-                              <CheckCircle className="w-12 h-12 mx-auto mb-2 opacity-50" />
-                              <p>All tasks completed!</p>
+                              <Badge variant="outline" className={config.color}>
+                                <PriorityIcon className="w-3 h-3" />
+                              </Badge>
                             </div>
-                          )}
-                        </div>
-                      </ScrollArea>
+                          );
+                        })}
+                        {todayTasks.length === 0 && (
+                          <p className="text-sm text-muted-foreground text-center py-4">No tasks due today</p>
+                        )}
+                      </div>
                     </CardContent>
                   </Card>
 
                   <Card>
-                    <CardHeader className="pb-2">
-                      <CardTitle className="text-lg flex items-center gap-2">
-                        <BookMarked className="w-5 h-5 text-primary" />
-                        Subject Progress
-                      </CardTitle>
+                    <CardHeader>
+                      <CardTitle>Quick Actions</CardTitle>
                     </CardHeader>
-                    <CardContent>
-                      <ScrollArea className="h-[300px]">
-                        <div className="space-y-4">
-                          {subjects.map((subject) => {
-                            const progress = subject.totalTopics > 0 
-                              ? Math.round((subject.coveredTopics / subject.totalTopics) * 100) 
-                              : 0;
-                            return (
-                              <div key={subject.id} className="space-y-2">
-                                <div className="flex items-center justify-between gap-2">
-                                  <div className="flex items-center gap-2">
-                                    <div className="w-3 h-3 rounded-full" style={{ backgroundColor: subject.color }} />
-                                    <span className="font-medium">{subject.name}</span>
-                                  </div>
-                                  <span className="text-sm text-muted-foreground">{progress}%</span>
-                                </div>
-                                <Progress value={progress} className="h-2" />
-                                <div className="flex items-center justify-between text-xs text-muted-foreground">
-                                  <span>{subject.studyHours}h studied</span>
-                                  {subject.googleDriveUrl && (
-                                    <a
-                                      href={subject.googleDriveUrl}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      className="flex items-center gap-1 hover:text-primary transition-colors"
-                                    >
-                                      <ExternalLink className="w-3 h-3" />
-                                      Drive
-                                    </a>
-                                  )}
-                                </div>
-                              </div>
-                            );
-                          })}
-                          {subjects.length === 0 && (
-                            <p className="text-center py-8 text-muted-foreground">No subjects added yet</p>
-                          )}
-                        </div>
-                      </ScrollArea>
-                    </CardContent>
-                  </Card>
-                </div>
-
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                  <Card className="hover-elevate cursor-pointer" onClick={() => setActiveView("flashcards")}>
-                    <CardContent className="p-4 flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
-                        <Layers className="w-5 h-5 text-primary" />
-                      </div>
-                      <div>
-                        <p className="text-2xl font-bold">{flashcards.length}</p>
-                        <p className="text-sm text-muted-foreground">Flashcards</p>
-                      </div>
-                    </CardContent>
-                  </Card>
-                  <Card className="hover-elevate cursor-pointer" onClick={() => setActiveView("notes")}>
-                    <CardContent className="p-4 flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-lg bg-chart-2/10 flex items-center justify-center">
-                        <StickyNoteIcon className="w-5 h-5 text-chart-2" />
-                      </div>
-                      <div>
-                        <p className="text-2xl font-bold">{stickyNotes.length}</p>
-                        <p className="text-sm text-muted-foreground">Sticky Notes</p>
-                      </div>
-                    </CardContent>
-                  </Card>
-                  <Card className="hover-elevate cursor-pointer" onClick={() => setActiveView("rewards")}>
-                    <CardContent className="p-4 flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-lg bg-chart-3/10 flex items-center justify-center">
-                        <Trophy className="w-5 h-5 text-chart-3" />
-                      </div>
-                      <div>
-                        <p className="text-2xl font-bold">{userStats?.badges?.length || 0}</p>
-                        <p className="text-sm text-muted-foreground">Badges</p>
-                      </div>
-                    </CardContent>
-                  </Card>
-                  <Card className="hover-elevate cursor-pointer" onClick={() => setActiveView("journal")}>
-                    <CardContent className="p-4 flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-lg bg-chart-4/10 flex items-center justify-center">
-                        <PenLine className="w-5 h-5 text-chart-4" />
-                      </div>
-                      <div>
-                        <p className="text-2xl font-bold">{journalEntries.length}</p>
-                        <p className="text-sm text-muted-foreground">Journal</p>
-                      </div>
+                    <CardContent className="grid grid-cols-2 gap-2">
+                      <Button variant="outline" className="h-auto py-4 flex flex-col gap-2" onClick={() => setShowAddTask(true)}>
+                        <ListTodo className="w-5 h-5" />
+                        <span className="text-xs">Add Task</span>
+                      </Button>
+                      <Button variant="outline" className="h-auto py-4 flex flex-col gap-2" onClick={() => setShowAddEvent(true)}>
+                        <CalendarDays className="w-5 h-5" />
+                        <span className="text-xs">Add Event</span>
+                      </Button>
+                      <Button variant="outline" className="h-auto py-4 flex flex-col gap-2" onClick={() => setShowAddNote(true)}>
+                        <FileText className="w-5 h-5" />
+                        <span className="text-xs">New Note</span>
+                      </Button>
+                      <Button variant="outline" className="h-auto py-4 flex flex-col gap-2" onClick={() => setShowAIChat(true)}>
+                        <Sparkles className="w-5 h-5" />
+                        <span className="text-xs">Ask AI</span>
+                      </Button>
                     </CardContent>
                   </Card>
                 </div>
@@ -901,7 +1129,7 @@ export default function DashboardPage() {
               <div className="space-y-6">
                 <div className="flex items-center justify-between gap-4">
                   <h2 className="text-2xl font-bold">Task Manager</h2>
-                  <Button onClick={() => setShowAddTask(true)} className="gap-2" data-testid="button-add-task-main">
+                  <Button onClick={() => setShowAddTask(true)} className="gap-2" data-testid="button-add-task">
                     <Plus className="w-4 h-4" />
                     Add Task
                   </Button>
@@ -916,6 +1144,7 @@ export default function DashboardPage() {
                     <div className="space-y-2">
                       {pendingTasks.map((task) => {
                         const config = PRIORITY_CONFIG[task.priority];
+                        const PriorityIcon = config.icon;
                         const subject = subjects.find(s => s.id === task.subjectId);
                         return (
                           <Card key={task.id} className="hover-elevate">
@@ -923,17 +1152,13 @@ export default function DashboardPage() {
                               <Checkbox
                                 checked={false}
                                 onCheckedChange={() => handleToggleTask(task)}
+                                data-testid={`checkbox-task-${task.id}`}
                               />
-                              <div className="flex-1 min-w-0">
+                              <div className="flex-1">
                                 <p className="font-medium">{task.title}</p>
-                                <div className="flex items-center gap-2 mt-1 flex-wrap">
-                                  <Badge variant="outline" className={config.color}>
-                                    <config.icon className="w-3 h-3 mr-1" />
-                                    {config.label}
-                                  </Badge>
+                                <div className="flex items-center gap-2 mt-1">
                                   {subject && (
-                                    <Badge variant="secondary">
-                                      <div className="w-2 h-2 rounded-full mr-1" style={{ backgroundColor: subject.color }} />
+                                    <Badge variant="outline" style={{ borderColor: subject.color, color: subject.color }}>
                                       {subject.name}
                                     </Badge>
                                   )}
@@ -944,6 +1169,10 @@ export default function DashboardPage() {
                                   )}
                                 </div>
                               </div>
+                              <Badge variant="outline" className={config.color}>
+                                <PriorityIcon className="w-3 h-3 mr-1" />
+                                {config.label}
+                              </Badge>
                               <Button variant="ghost" size="icon" onClick={() => handleDeleteTask(task.id)}>
                                 <Trash2 className="w-4 h-4 text-destructive" />
                               </Button>
@@ -965,12 +1194,9 @@ export default function DashboardPage() {
                   <TabsContent value="completed" className="mt-4">
                     <div className="space-y-2">
                       {completedTasks.map((task) => (
-                        <Card key={task.id} className="opacity-70">
+                        <Card key={task.id} className="opacity-60">
                           <CardContent className="p-4 flex items-center gap-4">
-                            <Checkbox
-                              checked={true}
-                              onCheckedChange={() => handleToggleTask(task)}
-                            />
+                            <Checkbox checked={true} onCheckedChange={() => handleToggleTask(task)} />
                             <div className="flex-1">
                               <p className="font-medium line-through text-muted-foreground">{task.title}</p>
                               {task.completedAt && (
@@ -991,9 +1217,113 @@ export default function DashboardPage() {
               </div>
             )}
 
+            {activeView === "calendar" && (
+              <div className="space-y-6">
+                <div className="flex items-center justify-between gap-4">
+                  <h2 className="text-2xl font-bold">Calendar</h2>
+                  <Button onClick={() => setShowAddEvent(true)} className="gap-2" data-testid="button-add-event">
+                    <Plus className="w-4 h-4" />
+                    Add Event
+                  </Button>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                  <Card className="lg:col-span-2">
+                    <CardContent className="p-4">
+                      <CalendarComponent
+                        mode="single"
+                        selected={selectedDate}
+                        onSelect={(date) => date && setSelectedDate(date)}
+                        className="w-full"
+                        modifiers={{
+                          hasEvents: (date) => getEventsForDate(date).length > 0
+                        }}
+                        modifiersClassNames={{
+                          hasEvents: "bg-primary/20 font-bold"
+                        }}
+                      />
+                    </CardContent>
+                  </Card>
+
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>
+                        Events for {selectedDate.toLocaleDateString("en-US", { month: "long", day: "numeric" })}
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <ScrollArea className="h-64">
+                        <div className="space-y-2">
+                          {getEventsForDate(selectedDate).map((event) => (
+                            <div
+                              key={event.id}
+                              className="p-3 rounded-lg bg-muted/50 hover-elevate cursor-pointer"
+                              onClick={() => setSelectedEvent(event)}
+                            >
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="flex items-center gap-2">
+                                  <div className="w-2 h-2 rounded-full" style={{ backgroundColor: event.color || "#8B5CF6" }} />
+                                  <span className="font-medium">{event.title}</span>
+                                </div>
+                                <Badge variant="outline">{event.type}</Badge>
+                              </div>
+                              {!event.allDay && (
+                                <p className="text-xs text-muted-foreground mt-1">
+                                  {new Date(event.startTime).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                                  {event.endTime && ` - ${new Date(event.endTime).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`}
+                                </p>
+                              )}
+                            </div>
+                          ))}
+                          {getEventsForDate(selectedDate).length === 0 && (
+                            <p className="text-sm text-muted-foreground text-center py-4">No events for this day</p>
+                          )}
+                        </div>
+                      </ScrollArea>
+                    </CardContent>
+                  </Card>
+                </div>
+
+                <Card>
+                  <CardHeader>
+                    <CardTitle>All Upcoming Events</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {[...calendarEvents, ...sharedEvents]
+                        .filter(e => new Date(e.startTime) >= new Date())
+                        .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime())
+                        .slice(0, 6)
+                        .map((event) => (
+                          <Card key={event.id} className="hover-elevate cursor-pointer" onClick={() => setSelectedEvent(event)}>
+                            <CardContent className="p-4">
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="flex-1">
+                                  <p className="font-medium">{event.title}</p>
+                                  <p className="text-sm text-muted-foreground">
+                                    {new Date(event.startTime).toLocaleDateString()}
+                                  </p>
+                                </div>
+                                <Badge variant="outline">{event.type}</Badge>
+                              </div>
+                            </CardContent>
+                          </Card>
+                        ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            )}
+
             {activeView === "exams" && (
               <div className="space-y-6">
-                <h2 className="text-2xl font-bold">Exam Countdown Center</h2>
+                <div className="flex items-center justify-between gap-4">
+                  <h2 className="text-2xl font-bold">Exam Countdown Center</h2>
+                  <Button onClick={() => setShowAddExam(true)} className="gap-2" data-testid="button-add-exam">
+                    <Plus className="w-4 h-4" />
+                    Add Exam
+                  </Button>
+                </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                   {exams.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()).map((exam) => {
                     const subject = subjects.find(s => s.id === exam.subjectId);
@@ -1026,18 +1356,13 @@ export default function DashboardPage() {
                             </div>
                             <Progress value={exam.confidence} className="h-2" />
                           </div>
-                          {exam.googleDriveUrl && (
-                            <a
-                              href={exam.googleDriveUrl}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="mt-4 flex items-center gap-2 text-sm text-primary hover:underline"
-                            >
-                              <ExternalLink className="w-4 h-4" />
-                              Study Materials
-                            </a>
-                          )}
                         </CardContent>
+                        <CardFooter>
+                          <Button variant="ghost" size="sm" className="text-destructive" onClick={() => handleDeleteExam(exam.id)}>
+                            <Trash2 className="w-4 h-4 mr-1" />
+                            Delete
+                          </Button>
+                        </CardFooter>
                       </Card>
                     );
                   })}
@@ -1046,7 +1371,11 @@ export default function DashboardPage() {
                       <CardContent className="p-12 text-center">
                         <Calendar className="w-16 h-16 mx-auto mb-4 opacity-50" />
                         <p className="text-lg font-medium">No exams scheduled</p>
-                        <p className="text-muted-foreground">Add exams from the setup to track them here</p>
+                        <p className="text-muted-foreground mb-4">Add your upcoming exams to track them</p>
+                        <Button onClick={() => setShowAddExam(true)}>
+                          <Plus className="w-4 h-4 mr-2" />
+                          Add Exam
+                        </Button>
                       </CardContent>
                     </Card>
                   )}
@@ -1056,7 +1385,13 @@ export default function DashboardPage() {
 
             {activeView === "subjects" && (
               <div className="space-y-6">
-                <h2 className="text-2xl font-bold">Subject Overview</h2>
+                <div className="flex items-center justify-between gap-4">
+                  <h2 className="text-2xl font-bold">Subject Overview</h2>
+                  <Button onClick={() => setShowAddSubject(true)} className="gap-2" data-testid="button-add-subject">
+                    <Plus className="w-4 h-4" />
+                    Add Subject
+                  </Button>
+                </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {subjects.map((subject) => {
                     const subjectExams = exams.filter(e => e.subjectId === subject.id);
@@ -1075,6 +1410,9 @@ export default function DashboardPage() {
                               <CardTitle className="text-lg">{subject.name}</CardTitle>
                               <CardDescription>{subject.studyHours}h total study time</CardDescription>
                             </div>
+                            <Button variant="ghost" size="icon" onClick={() => handleDeleteSubject(subject.id)}>
+                              <Trash2 className="w-4 h-4 text-destructive" />
+                            </Button>
                           </div>
                         </CardHeader>
                         <CardContent className="space-y-4">
@@ -1089,17 +1427,6 @@ export default function DashboardPage() {
                             <span>{subjectExams.length} exams</span>
                             <span>{subjectTasks.length} tasks</span>
                           </div>
-                          {subject.googleDriveUrl && (
-                            <a
-                              href={subject.googleDriveUrl}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="flex items-center gap-2 text-sm text-primary hover:underline"
-                            >
-                              <ExternalLink className="w-4 h-4" />
-                              Google Drive Materials
-                            </a>
-                          )}
                         </CardContent>
                       </Card>
                     );
@@ -1109,11 +1436,112 @@ export default function DashboardPage() {
                       <CardContent className="p-12 text-center">
                         <BookMarked className="w-16 h-16 mx-auto mb-4 opacity-50" />
                         <p className="text-lg font-medium">No subjects added</p>
-                        <p className="text-muted-foreground">Add subjects from the setup to track them here</p>
+                        <p className="text-muted-foreground mb-4">Add your subjects to track your progress</p>
+                        <Button onClick={() => setShowAddSubject(true)}>
+                          <Plus className="w-4 h-4 mr-2" />
+                          Add Subject
+                        </Button>
                       </CardContent>
                     </Card>
                   )}
                 </div>
+              </div>
+            )}
+
+            {activeView === "notes" && (
+              <div className="space-y-6">
+                <div className="flex items-center justify-between gap-4">
+                  <h2 className="text-2xl font-bold">Notes</h2>
+                  <Button onClick={() => setShowAddNote(true)} className="gap-2" data-testid="button-add-note">
+                    <Plus className="w-4 h-4" />
+                    New Note
+                  </Button>
+                </div>
+
+                <Tabs defaultValue="my-notes">
+                  <TabsList>
+                    <TabsTrigger value="my-notes">My Notes ({notes.length})</TabsTrigger>
+                    <TabsTrigger value="shared">Shared with Me ({sharedNotes.length})</TabsTrigger>
+                  </TabsList>
+
+                  <TabsContent value="my-notes" className="mt-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {notes.map((note) => {
+                        const subject = subjects.find(s => s.id === note.subjectId);
+                        return (
+                          <Card key={note.id} className="hover-elevate cursor-pointer" onClick={() => loadNoteDetails(note)}>
+                            <CardHeader className="pb-2">
+                              <div className="flex items-center justify-between gap-2">
+                                <CardTitle className="text-base truncate">{note.title}</CardTitle>
+                                <Button variant="ghost" size="icon" onClick={(e) => { e.stopPropagation(); handleDeleteNote(note.id); }}>
+                                  <Trash2 className="w-4 h-4 text-destructive" />
+                                </Button>
+                              </div>
+                              {subject && (
+                                <Badge variant="outline" style={{ borderColor: subject.color }}>
+                                  {subject.name}
+                                </Badge>
+                              )}
+                            </CardHeader>
+                            <CardContent>
+                              <p className="text-sm text-muted-foreground line-clamp-3">
+                                {note.content || "No content yet..."}
+                              </p>
+                              <p className="text-xs text-muted-foreground mt-2">
+                                Updated: {new Date(note.updatedAt).toLocaleDateString()}
+                              </p>
+                            </CardContent>
+                          </Card>
+                        );
+                      })}
+                      {notes.length === 0 && (
+                        <Card className="col-span-full">
+                          <CardContent className="p-12 text-center">
+                            <FileText className="w-16 h-16 mx-auto mb-4 opacity-50" />
+                            <p className="text-lg font-medium">No notes yet</p>
+                            <p className="text-muted-foreground mb-4">Create your first note to get started</p>
+                            <Button onClick={() => setShowAddNote(true)}>
+                              <Plus className="w-4 h-4 mr-2" />
+                              Create Note
+                            </Button>
+                          </CardContent>
+                        </Card>
+                      )}
+                    </div>
+                  </TabsContent>
+
+                  <TabsContent value="shared" className="mt-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {sharedNotes.map((note) => (
+                        <Card key={note.id} className="hover-elevate cursor-pointer" onClick={() => loadNoteDetails(note)}>
+                          <CardHeader className="pb-2">
+                            <div className="flex items-center justify-between gap-2">
+                              <CardTitle className="text-base truncate">{note.title}</CardTitle>
+                              <Badge variant="secondary">
+                                <Users className="w-3 h-3 mr-1" />
+                                Shared
+                              </Badge>
+                            </div>
+                          </CardHeader>
+                          <CardContent>
+                            <p className="text-sm text-muted-foreground line-clamp-3">
+                              {note.content || "No content..."}
+                            </p>
+                          </CardContent>
+                        </Card>
+                      ))}
+                      {sharedNotes.length === 0 && (
+                        <Card className="col-span-full">
+                          <CardContent className="p-12 text-center">
+                            <Share2 className="w-16 h-16 mx-auto mb-4 opacity-50" />
+                            <p className="text-lg font-medium">No shared notes</p>
+                            <p className="text-muted-foreground">Notes shared with you will appear here</p>
+                          </CardContent>
+                        </Card>
+                      )}
+                    </div>
+                  </TabsContent>
+                </Tabs>
               </div>
             )}
 
@@ -1192,11 +1620,11 @@ export default function DashboardPage() {
               </div>
             )}
 
-            {activeView === "notes" && (
+            {activeView === "sticky" && (
               <div className="space-y-6">
                 <div className="flex items-center justify-between gap-4">
                   <h2 className="text-2xl font-bold">Sticky Notes</h2>
-                  <Button onClick={() => setShowAddNote(true)} className="gap-2" data-testid="button-add-note">
+                  <Button onClick={() => setShowAddStickyNote(true)} className="gap-2" data-testid="button-add-sticky">
                     <Plus className="w-4 h-4" />
                     Add Note
                   </Button>
@@ -1213,7 +1641,7 @@ export default function DashboardPage() {
                         variant="ghost"
                         size="icon"
                         className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity"
-                        onClick={() => handleDeleteNote(note.id)}
+                        onClick={() => handleDeleteStickyNote(note.id)}
                       >
                         <Trash2 className="w-4 h-4 text-destructive" />
                       </Button>
@@ -1228,7 +1656,7 @@ export default function DashboardPage() {
                         <StickyNoteIcon className="w-16 h-16 mx-auto mb-4 opacity-50" />
                         <p className="text-lg font-medium">No sticky notes</p>
                         <p className="text-muted-foreground mb-4">Add quick notes and reminders</p>
-                        <Button onClick={() => setShowAddNote(true)}>
+                        <Button onClick={() => setShowAddStickyNote(true)}>
                           <Plus className="w-4 h-4 mr-2" />
                           Add Note
                         </Button>
@@ -1250,7 +1678,7 @@ export default function DashboardPage() {
                           <Clock className="w-6 h-6 text-primary" />
                         </div>
                         <div>
-                          <p className="text-3xl font-bold">{userStats?.totalFocusMinutes || 0}</p>
+                          <p className="text-3xl font-bold">{stats.totalFocusMinutes}</p>
                           <p className="text-sm text-muted-foreground">Total Focus Minutes</p>
                         </div>
                       </div>
@@ -1263,7 +1691,7 @@ export default function DashboardPage() {
                           <CheckCircle className="w-6 h-6 text-green-500" />
                         </div>
                         <div>
-                          <p className="text-3xl font-bold">{userStats?.totalTasksCompleted || 0}</p>
+                          <p className="text-3xl font-bold">{stats.totalTasksCompleted}</p>
                           <p className="text-sm text-muted-foreground">Tasks Completed</p>
                         </div>
                       </div>
@@ -1276,7 +1704,7 @@ export default function DashboardPage() {
                           <Flame className="w-6 h-6 text-orange-500" />
                         </div>
                         <div>
-                          <p className="text-3xl font-bold">{userStats?.dailyStreak || 0}</p>
+                          <p className="text-3xl font-bold">{stats.dailyStreak}</p>
                           <p className="text-sm text-muted-foreground">Day Streak</p>
                         </div>
                       </div>
@@ -1289,7 +1717,7 @@ export default function DashboardPage() {
                           <Trophy className="w-6 h-6 text-chart-3" />
                         </div>
                         <div>
-                          <p className="text-3xl font-bold">{userStats?.badges?.length || 0}</p>
+                          <p className="text-3xl font-bold">{stats.badges?.length || 0}</p>
                           <p className="text-sm text-muted-foreground">Badges Earned</p>
                         </div>
                       </div>
@@ -1304,7 +1732,7 @@ export default function DashboardPage() {
                   <CardContent>
                     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
                       {Object.values(BADGES).map((badge) => {
-                        const earned = userStats?.badges?.includes(badge.id);
+                        const earned = stats.badges?.includes(badge.id);
                         return (
                           <div
                             key={badge.id}
@@ -1428,100 +1856,60 @@ export default function DashboardPage() {
                 </div>
               </div>
             )}
-
-            {activeView === "schedule" && (
-              <div className="space-y-6">
-                <h2 className="text-2xl font-bold">Weekly Schedule</h2>
-                <Card>
-                  <CardContent className="p-6">
-                    <div className="grid grid-cols-7 gap-2">
-                      {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day, index) => (
-                        <div key={day} className="text-center">
-                          <p className="font-medium text-sm mb-2">{day}</p>
-                          <div className="min-h-[200px] rounded-lg bg-muted/50 p-2">
-                            <p className="text-xs text-muted-foreground">No blocks</p>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                    <p className="text-center text-muted-foreground mt-4">
-                      Schedule blocks coming soon. Add study blocks to organize your week.
-                    </p>
-                  </CardContent>
-                </Card>
-              </div>
-            )}
           </main>
         </div>
 
-        <Button
-          className="fixed bottom-6 right-6 w-14 h-14 rounded-full shadow-xl neon-glow z-50"
-          onClick={() => setShowAIChat(!showAIChat)}
-          data-testid="button-ai-chat"
-        >
-          <Brain className="w-6 h-6" />
-        </Button>
-
-        {showAIChat && (
-          <Card className="fixed bottom-24 right-6 w-[380px] max-h-[500px] shadow-2xl z-50 flex flex-col">
-            <CardHeader className="pb-2 flex flex-row items-center justify-between gap-4 space-y-0">
-              <div className="flex items-center gap-2">
-                <Brain className="w-5 h-5 text-primary" />
-                <CardTitle className="text-lg">AI Study Assistant</CardTitle>
-              </div>
-              <Button variant="ghost" size="icon" onClick={() => setShowAIChat(false)}>
-                <X className="w-4 h-4" />
-              </Button>
-            </CardHeader>
-            <CardContent className="flex-1 overflow-hidden p-0">
-              <ScrollArea className="h-[340px] p-4">
-                {aiMessages.length === 0 ? (
-                  <div className="text-center py-8 text-muted-foreground">
-                    <Brain className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                    <p className="text-sm">Ask me anything about your studies!</p>
+        <Dialog open={showAIChat} onOpenChange={setShowAIChat}>
+          <DialogContent className="max-w-2xl h-[80vh] flex flex-col">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Sparkles className="w-5 h-5 text-primary" />
+                StudyFlow AI Assistant
+              </DialogTitle>
+              <DialogDescription>
+                Ask me anything about your studies! I have access to your subjects, tasks, calendar, and more.
+              </DialogDescription>
+            </DialogHeader>
+            <ScrollArea className="flex-1 pr-4">
+              <div className="space-y-4">
+                {aiMessages.map((msg) => (
+                  <div key={msg.id} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
+                    <div className={`max-w-[80%] p-3 rounded-lg ${
+                      msg.role === "user" ? "bg-primary text-primary-foreground" : "bg-muted"
+                    }`}>
+                      <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
+                    </div>
                   </div>
-                ) : (
-                  <div className="space-y-4">
-                    {aiMessages.map((msg) => (
-                      <div
-                        key={msg.id}
-                        className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
-                      >
-                        <div
-                          className={`max-w-[85%] p-3 rounded-lg ${
-                            msg.role === "user"
-                              ? "bg-primary text-primary-foreground"
-                              : "bg-muted"
-                          }`}
-                        >
-                          <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
-                        </div>
+                ))}
+                {aiLoading && (
+                  <div className="flex justify-start">
+                    <div className="bg-muted p-3 rounded-lg">
+                      <div className="flex gap-1">
+                        <span className="w-2 h-2 bg-muted-foreground rounded-full animate-bounce" />
+                        <span className="w-2 h-2 bg-muted-foreground rounded-full animate-bounce" style={{ animationDelay: "0.1s" }} />
+                        <span className="w-2 h-2 bg-muted-foreground rounded-full animate-bounce" style={{ animationDelay: "0.2s" }} />
                       </div>
-                    ))}
-                    <div ref={chatEndRef} />
+                    </div>
                   </div>
                 )}
-              </ScrollArea>
-            </CardContent>
-            <CardFooter className="p-4 pt-0">
-              <form
-                className="flex items-center gap-2 w-full"
-                onSubmit={(e) => { e.preventDefault(); handleSendAIMessage(); }}
-              >
-                <Input
-                  value={aiInput}
-                  onChange={(e) => setAiInput(e.target.value)}
-                  placeholder="Ask a question..."
-                  disabled={aiLoading}
-                  data-testid="input-ai-message"
-                />
-                <Button type="submit" size="icon" disabled={aiLoading || !aiInput.trim()} data-testid="button-send-ai">
-                  <Send className="w-4 h-4" />
-                </Button>
-              </form>
-            </CardFooter>
-          </Card>
-        )}
+                <div ref={chatEndRef} />
+              </div>
+            </ScrollArea>
+            <div className="flex gap-2 pt-4 border-t">
+              <Input
+                placeholder="Ask about your studies..."
+                value={aiInput}
+                onChange={(e) => setAiInput(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && handleSendAIMessage()}
+                disabled={aiLoading}
+                data-testid="input-ai-message"
+              />
+              <Button onClick={handleSendAIMessage} disabled={aiLoading || !aiInput.trim()} data-testid="button-send-ai">
+                <Send className="w-4 h-4" />
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
 
         <Dialog open={showAddTask} onOpenChange={setShowAddTask}>
           <DialogContent>
@@ -1529,55 +1917,140 @@ export default function DashboardPage() {
               <DialogTitle>Add New Task</DialogTitle>
             </DialogHeader>
             <div className="space-y-4">
-              <div>
-                <label className="text-sm font-medium">Task Title</label>
-                <Input
-                  value={newTaskTitle}
-                  onChange={(e) => setNewTaskTitle(e.target.value)}
-                  placeholder="What needs to be done?"
-                  data-testid="input-new-task-title"
-                />
-              </div>
-              <div>
-                <label className="text-sm font-medium">Priority</label>
-                <Select value={newTaskPriority} onValueChange={(v: any) => setNewTaskPriority(v)}>
-                  <SelectTrigger data-testid="select-task-priority">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {Object.entries(PRIORITY_CONFIG).map(([key, config]) => (
-                      <SelectItem key={key} value={key}>
-                        <div className="flex items-center gap-2">
-                          <config.icon className="w-4 h-4" />
-                          {config.label}
-                        </div>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <label className="text-sm font-medium">Subject (Optional)</label>
-                <Select value={newTaskSubject} onValueChange={setNewTaskSubject}>
-                  <SelectTrigger data-testid="select-task-subject">
-                    <SelectValue placeholder="Select subject" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {subjects.map((subject) => (
-                      <SelectItem key={subject.id} value={subject.id}>
-                        <div className="flex items-center gap-2">
-                          <div className="w-3 h-3 rounded-full" style={{ backgroundColor: subject.color }} />
-                          {subject.name}
-                        </div>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+              <Input
+                placeholder="Task title"
+                value={newTaskTitle}
+                onChange={(e) => setNewTaskTitle(e.target.value)}
+                data-testid="input-task-title"
+              />
+              <Select value={newTaskPriority} onValueChange={(v: any) => setNewTaskPriority(v)}>
+                <SelectTrigger data-testid="select-task-priority">
+                  <SelectValue placeholder="Priority" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="critical">Critical</SelectItem>
+                  <SelectItem value="high">High</SelectItem>
+                  <SelectItem value="medium">Medium</SelectItem>
+                  <SelectItem value="low">Low</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select value={newTaskSubject} onValueChange={setNewTaskSubject}>
+                <SelectTrigger data-testid="select-task-subject">
+                  <SelectValue placeholder="Subject (optional)" />
+                </SelectTrigger>
+                <SelectContent>
+                  {subjects.map((s) => (
+                    <SelectItem key={s.id} value={s.id.toString()}>{s.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" className="w-full justify-start">
+                    <CalendarDays className="w-4 h-4 mr-2" />
+                    {newTaskDueDate ? newTaskDueDate.toLocaleDateString() : "Due date (optional)"}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0">
+                  <CalendarComponent mode="single" selected={newTaskDueDate} onSelect={setNewTaskDueDate} />
+                </PopoverContent>
+              </Popover>
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setShowAddTask(false)}>Cancel</Button>
-              <Button onClick={handleAddTask} disabled={!newTaskTitle.trim()} data-testid="button-save-task">Add Task</Button>
+              <Button onClick={handleAddTask} data-testid="button-submit-task">Add Task</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={showAddSubject} onOpenChange={setShowAddSubject}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Add New Subject</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <Input
+                placeholder="Subject name"
+                value={newSubjectName}
+                onChange={(e) => setNewSubjectName(e.target.value)}
+                data-testid="input-subject-name"
+              />
+              <div className="space-y-2">
+                <label className="text-sm">Color</label>
+                <div className="flex gap-2">
+                  {NOTE_COLORS.map((color) => (
+                    <button
+                      key={color}
+                      className={`w-8 h-8 rounded-full border-2 ${newSubjectColor === color ? "border-foreground" : "border-transparent"}`}
+                      style={{ backgroundColor: color }}
+                      onClick={() => setNewSubjectColor(color)}
+                    />
+                  ))}
+                </div>
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm">Total Topics</label>
+                <Input
+                  type="number"
+                  min={0}
+                  value={newSubjectTopics}
+                  onChange={(e) => setNewSubjectTopics(parseInt(e.target.value) || 0)}
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowAddSubject(false)}>Cancel</Button>
+              <Button onClick={handleAddSubject} data-testid="button-submit-subject">Add Subject</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={showAddExam} onOpenChange={setShowAddExam}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Add New Exam</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <Input
+                placeholder="Exam name"
+                value={newExamName}
+                onChange={(e) => setNewExamName(e.target.value)}
+                data-testid="input-exam-name"
+              />
+              <Select value={newExamSubject} onValueChange={setNewExamSubject}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Subject (optional)" />
+                </SelectTrigger>
+                <SelectContent>
+                  {subjects.map((s) => (
+                    <SelectItem key={s.id} value={s.id.toString()}>{s.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" className="w-full justify-start">
+                    <Calendar className="w-4 h-4 mr-2" />
+                    {newExamDate ? newExamDate.toLocaleDateString() : "Select exam date"}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0">
+                  <CalendarComponent mode="single" selected={newExamDate} onSelect={setNewExamDate} />
+                </PopoverContent>
+              </Popover>
+              <div className="space-y-2">
+                <label className="text-sm">Confidence Level: {newExamConfidence}%</label>
+                <Slider
+                  value={[newExamConfidence]}
+                  onValueChange={(v) => setNewExamConfidence(v[0])}
+                  max={100}
+                  step={5}
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowAddExam(false)}>Cancel</Button>
+              <Button onClick={handleAddExam} data-testid="button-submit-exam">Add Exam</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
@@ -1585,37 +2058,292 @@ export default function DashboardPage() {
         <Dialog open={showAddNote} onOpenChange={setShowAddNote}>
           <DialogContent>
             <DialogHeader>
+              <DialogTitle>Create New Note</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <Input
+                placeholder="Note title"
+                value={newNoteTitle}
+                onChange={(e) => setNewNoteTitle(e.target.value)}
+                data-testid="input-note-title"
+              />
+              <Textarea
+                placeholder="Note content..."
+                value={newNoteContent}
+                onChange={(e) => setNewNoteContent(e.target.value)}
+                rows={6}
+              />
+              <Select value={newNoteSubject} onValueChange={setNewNoteSubject}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Subject (optional)" />
+                </SelectTrigger>
+                <SelectContent>
+                  {subjects.map((s) => (
+                    <SelectItem key={s.id} value={s.id.toString()}>{s.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowAddNote(false)}>Cancel</Button>
+              <Button onClick={handleAddNote} data-testid="button-submit-note">Create Note</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={!!selectedNote} onOpenChange={() => setSelectedNote(null)}>
+          <DialogContent className="max-w-3xl h-[80vh] flex flex-col">
+            <DialogHeader>
+              <div className="flex items-center justify-between gap-4">
+                <Input
+                  className="text-xl font-bold border-0 p-0 focus-visible:ring-0"
+                  value={selectedNote?.title || ""}
+                  onChange={(e) => selectedNote && setSelectedNote({ ...selectedNote, title: e.target.value })}
+                  onBlur={() => selectedNote && handleUpdateNote(selectedNote.id, { title: selectedNote.title })}
+                />
+                <Button variant="outline" size="sm" onClick={() => setShowShareNote(true)}>
+                  <Share2 className="w-4 h-4 mr-1" />
+                  Share
+                </Button>
+              </div>
+            </DialogHeader>
+            <Textarea
+              className="flex-1 resize-none border-0 focus-visible:ring-0"
+              placeholder="Start writing..."
+              value={selectedNote?.content || ""}
+              onChange={(e) => selectedNote && setSelectedNote({ ...selectedNote, content: e.target.value })}
+              onBlur={() => selectedNote && handleUpdateNote(selectedNote.id, { content: selectedNote.content })}
+            />
+            {noteShares.length > 0 && (
+              <div className="pt-4 border-t">
+                <p className="text-sm font-medium mb-2">Shared with:</p>
+                <div className="space-y-2">
+                  {noteShares.map((share) => (
+                    <div key={share.id} className="flex items-center justify-between gap-2 p-2 rounded-lg bg-muted/50">
+                      <span className="text-sm">{share.sharedWithEmail}</span>
+                      <div className="flex items-center gap-2">
+                        <Select value={share.role} onValueChange={(v) => handleUpdateNoteShare(share.id, v)}>
+                          <SelectTrigger className="w-28 h-8">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="viewer">Viewer</SelectItem>
+                            <SelectItem value="commenter">Commenter</SelectItem>
+                            <SelectItem value="editor">Editor</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <Button variant="ghost" size="icon" onClick={() => handleRemoveNoteShare(share.id)}>
+                          <X className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={showShareNote} onOpenChange={setShowShareNote}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Share Note</DialogTitle>
+              <DialogDescription>
+                Invite someone to view, comment, or edit this note.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <Input
+                type="email"
+                placeholder="Email address"
+                value={shareEmail}
+                onChange={(e) => setShareEmail(e.target.value)}
+              />
+              <Select value={shareRole} onValueChange={(v: any) => setShareRole(v)}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Permission level" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="viewer">Viewer - Can only view</SelectItem>
+                  <SelectItem value="commenter">Commenter - Can view and comment</SelectItem>
+                  <SelectItem value="editor">Editor - Can view, comment, and edit</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowShareNote(false)}>Cancel</Button>
+              <Button onClick={handleShareNote}>Share</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={showAddEvent} onOpenChange={setShowAddEvent}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Add Calendar Event</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <Input
+                placeholder="Event title"
+                value={newEventTitle}
+                onChange={(e) => setNewEventTitle(e.target.value)}
+                data-testid="input-event-title"
+              />
+              <Textarea
+                placeholder="Description (optional)"
+                value={newEventDescription}
+                onChange={(e) => setNewEventDescription(e.target.value)}
+                rows={3}
+              />
+              <Select value={newEventType} onValueChange={(v: any) => setNewEventType(v)}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Event type" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="event">Event</SelectItem>
+                  <SelectItem value="task">Task</SelectItem>
+                  <SelectItem value="reminder">Reminder</SelectItem>
+                </SelectContent>
+              </Select>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" className="w-full justify-start">
+                    <Calendar className="w-4 h-4 mr-2" />
+                    {newEventDate ? newEventDate.toLocaleDateString() : "Select date"}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0">
+                  <CalendarComponent mode="single" selected={newEventDate} onSelect={setNewEventDate} />
+                </PopoverContent>
+              </Popover>
+              <div className="flex items-center gap-2">
+                <Switch checked={newEventAllDay} onCheckedChange={setNewEventAllDay} />
+                <span className="text-sm">All day</span>
+              </div>
+              {!newEventAllDay && (
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-sm">Start time</label>
+                    <Input type="time" value={newEventTime} onChange={(e) => setNewEventTime(e.target.value)} />
+                  </div>
+                  <div>
+                    <label className="text-sm">End time</label>
+                    <Input type="time" value={newEventEndTime} onChange={(e) => setNewEventEndTime(e.target.value)} />
+                  </div>
+                </div>
+              )}
+              <Select value={newEventReminder.toString()} onValueChange={(v) => setNewEventReminder(parseInt(v))}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Reminder" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="0">No reminder</SelectItem>
+                  <SelectItem value="5">5 minutes before</SelectItem>
+                  <SelectItem value="15">15 minutes before</SelectItem>
+                  <SelectItem value="30">30 minutes before</SelectItem>
+                  <SelectItem value="60">1 hour before</SelectItem>
+                  <SelectItem value="1440">1 day before</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowAddEvent(false)}>Cancel</Button>
+              <Button onClick={handleAddEvent} data-testid="button-submit-event">Add Event</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={!!selectedEvent} onOpenChange={() => setSelectedEvent(null)}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>{selectedEvent?.title}</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <CalendarDays className="w-4 h-4" />
+                {selectedEvent && new Date(selectedEvent.startTime).toLocaleDateString("en-US", {
+                  weekday: "long",
+                  month: "long",
+                  day: "numeric",
+                  year: "numeric"
+                })}
+              </div>
+              {!selectedEvent?.allDay && (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Clock className="w-4 h-4" />
+                  {selectedEvent && new Date(selectedEvent.startTime).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                  {selectedEvent?.endTime && ` - ${new Date(selectedEvent.endTime).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`}
+                </div>
+              )}
+              {selectedEvent?.description && (
+                <p className="text-sm">{selectedEvent.description}</p>
+              )}
+            </div>
+            <DialogFooter className="gap-2">
+              <Button variant="outline" onClick={() => setShowShareEvent(true)}>
+                <Share2 className="w-4 h-4 mr-1" />
+                Share
+              </Button>
+              <Button variant="destructive" onClick={() => selectedEvent && handleDeleteEvent(selectedEvent.id)}>
+                <Trash2 className="w-4 h-4 mr-1" />
+                Delete
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={showShareEvent} onOpenChange={setShowShareEvent}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Share Event</DialogTitle>
+              <DialogDescription>
+                Send an invitation to someone. They'll need to accept to see this event.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <Input
+                type="email"
+                placeholder="Email address"
+                value={shareEventEmail}
+                onChange={(e) => setShareEventEmail(e.target.value)}
+              />
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowShareEvent(false)}>Cancel</Button>
+              <Button onClick={handleShareEvent}>Send Invitation</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={showAddStickyNote} onOpenChange={setShowAddStickyNote}>
+          <DialogContent>
+            <DialogHeader>
               <DialogTitle>Add Sticky Note</DialogTitle>
             </DialogHeader>
             <div className="space-y-4">
-              <div>
-                <label className="text-sm font-medium">Note Content</label>
-                <Textarea
-                  value={newNoteContent}
-                  onChange={(e) => setNewNoteContent(e.target.value)}
-                  placeholder="Write your note..."
-                  className="min-h-[100px]"
-                  data-testid="input-new-note"
-                />
-              </div>
-              <div>
-                <label className="text-sm font-medium">Color</label>
-                <div className="flex gap-2 mt-2">
-                  {["#8B5CF6", "#06B6D4", "#EC4899", "#22C55E", "#F97316", "#EAB308"].map((color) => (
+              <Textarea
+                placeholder="Note content..."
+                value={newStickyContent}
+                onChange={(e) => setNewStickyContent(e.target.value)}
+                rows={4}
+              />
+              <div className="space-y-2">
+                <label className="text-sm">Color</label>
+                <div className="flex gap-2">
+                  {NOTE_COLORS.map((color) => (
                     <button
                       key={color}
-                      type="button"
-                      className={`w-8 h-8 rounded-full border-2 ${newNoteColor === color ? "border-foreground" : "border-transparent"}`}
+                      className={`w-8 h-8 rounded-full border-2 ${newStickyColor === color ? "border-foreground" : "border-transparent"}`}
                       style={{ backgroundColor: color }}
-                      onClick={() => setNewNoteColor(color)}
+                      onClick={() => setNewStickyColor(color)}
                     />
                   ))}
                 </div>
               </div>
             </div>
             <DialogFooter>
-              <Button variant="outline" onClick={() => setShowAddNote(false)}>Cancel</Button>
-              <Button onClick={handleAddStickyNote} disabled={!newNoteContent.trim()} data-testid="button-save-note">Add Note</Button>
+              <Button variant="outline" onClick={() => setShowAddStickyNote(false)}>Cancel</Button>
+              <Button onClick={handleAddStickyNote}>Add Note</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
@@ -1623,49 +2351,35 @@ export default function DashboardPage() {
         <Dialog open={showAddFlashcard} onOpenChange={setShowAddFlashcard}>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Create Flashcard</DialogTitle>
+              <DialogTitle>Add Flashcard</DialogTitle>
             </DialogHeader>
             <div className="space-y-4">
-              <div>
-                <label className="text-sm font-medium">Question (Front)</label>
-                <Textarea
-                  value={newFlashcardFront}
-                  onChange={(e) => setNewFlashcardFront(e.target.value)}
-                  placeholder="Enter the question..."
-                  data-testid="input-flashcard-front"
-                />
-              </div>
-              <div>
-                <label className="text-sm font-medium">Answer (Back)</label>
-                <Textarea
-                  value={newFlashcardBack}
-                  onChange={(e) => setNewFlashcardBack(e.target.value)}
-                  placeholder="Enter the answer..."
-                  data-testid="input-flashcard-back"
-                />
-              </div>
-              <div>
-                <label className="text-sm font-medium">Subject (Optional)</label>
-                <Select value={newFlashcardSubject} onValueChange={setNewFlashcardSubject}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select subject" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {subjects.map((subject) => (
-                      <SelectItem key={subject.id} value={subject.id}>
-                        <div className="flex items-center gap-2">
-                          <div className="w-3 h-3 rounded-full" style={{ backgroundColor: subject.color }} />
-                          {subject.name}
-                        </div>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+              <Input
+                placeholder="Question (Front)"
+                value={newFlashcardFront}
+                onChange={(e) => setNewFlashcardFront(e.target.value)}
+                data-testid="input-flashcard-front"
+              />
+              <Textarea
+                placeholder="Answer (Back)"
+                value={newFlashcardBack}
+                onChange={(e) => setNewFlashcardBack(e.target.value)}
+                rows={3}
+              />
+              <Select value={newFlashcardSubject} onValueChange={setNewFlashcardSubject}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Subject (optional)" />
+                </SelectTrigger>
+                <SelectContent>
+                  {subjects.map((s) => (
+                    <SelectItem key={s.id} value={s.id.toString()}>{s.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setShowAddFlashcard(false)}>Cancel</Button>
-              <Button onClick={handleAddFlashcard} disabled={!newFlashcardFront.trim() || !newFlashcardBack.trim()} data-testid="button-save-flashcard">Create</Button>
+              <Button onClick={handleAddFlashcard} data-testid="button-submit-flashcard">Add Flashcard</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
@@ -1674,41 +2388,36 @@ export default function DashboardPage() {
           <DialogContent>
             <DialogHeader>
               <DialogTitle>New Journal Entry</DialogTitle>
-              <DialogDescription>How are you feeling today?</DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
-              <div className="flex items-center justify-center gap-4">
-                {MOOD_OPTIONS.map((mood) => {
-                  const Icon = mood.icon;
-                  return (
-                    <button
-                      key={mood.value}
-                      type="button"
-                      onClick={() => setJournalMood(mood.value as any)}
-                      className={`p-3 rounded-lg border-2 transition-all ${
-                        journalMood === mood.value ? "border-primary bg-primary/10" : "border-transparent hover:bg-muted"
-                      }`}
-                    >
-                      <Icon className={`w-8 h-8 ${mood.color}`} />
-                      <p className="text-xs mt-1">{mood.label}</p>
-                    </button>
-                  );
-                })}
+              <div className="space-y-2">
+                <label className="text-sm">How are you feeling?</label>
+                <div className="flex gap-2">
+                  {MOOD_OPTIONS.map((mood) => {
+                    const MoodIcon = mood.icon;
+                    return (
+                      <Button
+                        key={mood.value}
+                        variant={journalMood === mood.value ? "default" : "outline"}
+                        size="icon"
+                        onClick={() => setJournalMood(mood.value as any)}
+                      >
+                        <MoodIcon className={`w-5 h-5 ${mood.color}`} />
+                      </Button>
+                    );
+                  })}
+                </div>
               </div>
-              <div>
-                <label className="text-sm font-medium">Reflection</label>
-                <Textarea
-                  value={journalContent}
-                  onChange={(e) => setJournalContent(e.target.value)}
-                  placeholder="What's on your mind? How did your study session go?"
-                  className="min-h-[150px]"
-                  data-testid="input-journal-content"
-                />
-              </div>
+              <Textarea
+                placeholder="Write about your day..."
+                value={journalContent}
+                onChange={(e) => setJournalContent(e.target.value)}
+                rows={6}
+              />
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setShowJournalModal(false)}>Cancel</Button>
-              <Button onClick={handleAddJournalEntry} disabled={!journalContent.trim()} data-testid="button-save-journal">Save Entry</Button>
+              <Button onClick={handleAddJournalEntry} data-testid="button-submit-journal">Save Entry</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
@@ -1717,206 +2426,90 @@ export default function DashboardPage() {
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Add Reward</DialogTitle>
-              <DialogDescription>Set a reward for completing tasks!</DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
-              <div>
-                <label className="text-sm font-medium">Reward</label>
-                <Input
-                  value={newRewardName}
-                  onChange={(e) => setNewRewardName(e.target.value)}
-                  placeholder="e.g., Watch an episode of my favorite show"
-                  data-testid="input-reward-name"
-                />
-              </div>
-              <div>
-                <label className="text-sm font-medium">Tasks Required: {newRewardTarget}</label>
+              <Input
+                placeholder="Reward (e.g., Watch a movie)"
+                value={newRewardName}
+                onChange={(e) => setNewRewardName(e.target.value)}
+                data-testid="input-reward-name"
+              />
+              <div className="space-y-2">
+                <label className="text-sm">Tasks to complete: {newRewardTarget}</label>
                 <Slider
                   value={[newRewardTarget]}
                   onValueChange={(v) => setNewRewardTarget(v[0])}
                   min={1}
                   max={20}
                   step={1}
-                  className="mt-2"
                 />
               </div>
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setShowAddReward(false)}>Cancel</Button>
-              <Button onClick={handleAddReward} disabled={!newRewardName.trim()} data-testid="button-save-reward">Add Reward</Button>
+              <Button onClick={handleAddReward} data-testid="button-submit-reward">Add Reward</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
 
         <Dialog open={showSettings} onOpenChange={setShowSettings}>
-          <DialogContent className="max-w-md">
+          <DialogContent>
             <DialogHeader>
               <DialogTitle>Settings</DialogTitle>
             </DialogHeader>
             <div className="space-y-6">
               <div className="space-y-4">
                 <h3 className="font-medium">Pomodoro Timer</h3>
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm">Work Duration</span>
-                    <span className="text-sm font-medium">{pomodoroSettings?.workDuration || 25} min</span>
-                  </div>
+                <div className="space-y-2">
+                  <label className="text-sm">Focus Duration: {pomodoroSettings.workDuration} min</label>
                   <Slider
-                    value={[pomodoroSettings?.workDuration || 25]}
-                    onValueChange={async (v) => {
-                      if (pomodoroSettings && user) {
-                        const updated = { ...pomodoroSettings, workDuration: v[0] };
-                        await savePomodoroSettings(user.id, updated);
-                        setPomodoroSettings(updated);
-                        if (timerMode === "work" && !timerRunning) {
-                          setTimerSeconds(v[0] * 60);
-                        }
-                      }
-                    }}
-                    min={5}
+                    value={[pomodoroSettings.workDuration]}
+                    onValueChange={(v) => setPomodoroSettings({ ...pomodoroSettings, workDuration: v[0] })}
+                    min={15}
                     max={60}
                     step={5}
                   />
                 </div>
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm">Short Break</span>
-                    <span className="text-sm font-medium">{pomodoroSettings?.shortBreakDuration || 5} min</span>
-                  </div>
+                <div className="space-y-2">
+                  <label className="text-sm">Short Break: {pomodoroSettings.shortBreakDuration} min</label>
                   <Slider
-                    value={[pomodoroSettings?.shortBreakDuration || 5]}
-                    onValueChange={async (v) => {
-                      if (pomodoroSettings && user) {
-                        const updated = { ...pomodoroSettings, shortBreakDuration: v[0] };
-                        await savePomodoroSettings(user.id, updated);
-                        setPomodoroSettings(updated);
-                      }
-                    }}
-                    min={1}
+                    value={[pomodoroSettings.shortBreakDuration]}
+                    onValueChange={(v) => setPomodoroSettings({ ...pomodoroSettings, shortBreakDuration: v[0] })}
+                    min={3}
                     max={15}
                     step={1}
                   />
                 </div>
-              </div>
-
-              <Separator />
-
-              <div className="space-y-4">
-                <h3 className="font-medium">Notifications</h3>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm">Sound Effects</span>
-                  <Switch
-                    checked={pomodoroSettings?.soundEnabled ?? true}
-                    onCheckedChange={async (checked) => {
-                      if (pomodoroSettings && user) {
-                        const updated = { ...pomodoroSettings, soundEnabled: checked };
-                        await savePomodoroSettings(user.id, updated);
-                        setPomodoroSettings(updated);
-                      }
-                    }}
+                <div className="space-y-2">
+                  <label className="text-sm">Long Break: {pomodoroSettings.longBreakDuration} min</label>
+                  <Slider
+                    value={[pomodoroSettings.longBreakDuration]}
+                    onValueChange={(v) => setPomodoroSettings({ ...pomodoroSettings, longBreakDuration: v[0] })}
+                    min={10}
+                    max={30}
+                    step={5}
                   />
                 </div>
               </div>
-
               <Separator />
-
-              <div className="space-y-4">
-                <h3 className="font-medium">Account</h3>
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
-                    <User className="w-6 h-6 text-primary" />
-                  </div>
-                  <div>
-                    <p className="font-medium">{user?.name}</p>
-                    <p className="text-sm text-muted-foreground">{user?.email}</p>
-                  </div>
-                </div>
+              <div className="flex items-center justify-between">
+                <span>Theme</span>
+                <Button variant="outline" size="sm" onClick={toggleTheme}>
+                  {theme === "dark" ? <Sun className="w-4 h-4 mr-2" /> : <Moon className="w-4 h-4 mr-2" />}
+                  {theme === "dark" ? "Light" : "Dark"}
+                </Button>
               </div>
             </div>
-          </DialogContent>
-        </Dialog>
-
-        <Dialog open={showBattleMode} onOpenChange={setShowBattleMode}>
-          <DialogContent className="max-w-full h-screen bg-black/95 border-none">
-            <div className="h-full flex flex-col items-center justify-center text-white">
-              <Button
-                variant="ghost"
-                size="icon"
-                className="absolute top-4 right-4 text-white hover:bg-white/10"
-                onClick={() => setShowBattleMode(false)}
-              >
-                <X className="w-6 h-6" />
+            <DialogFooter>
+              <Button onClick={async () => {
+                await api.savePomodoroSettings(pomodoroSettings);
+                setTimerSeconds(pomodoroSettings.workDuration * 60);
+                setShowSettings(false);
+                toast({ title: "Settings saved!" });
+              }}>
+                Save Settings
               </Button>
-
-              <div className="text-center space-y-8">
-                <h1 className="text-4xl md:text-6xl font-bold gradient-text">BATTLE MODE</h1>
-                <p className="text-xl text-white/60">Zero distractions. Maximum focus.</p>
-
-                <div className="relative w-64 h-64">
-                  <svg className="w-full h-full progress-ring" viewBox="0 0 100 100">
-                    <circle
-                      cx="50" cy="50" r="45"
-                      fill="none"
-                      stroke="rgba(255,255,255,0.1)"
-                      strokeWidth="6"
-                    />
-                    <circle
-                      cx="50" cy="50" r="45"
-                      fill="none"
-                      stroke="hsl(var(--primary))"
-                      strokeWidth="6"
-                      strokeLinecap="round"
-                      strokeDasharray={`${getTimerProgress() * 2.83} 283`}
-                      className="transition-all duration-1000 animate-pulse-glow"
-                    />
-                  </svg>
-                  <div className="absolute inset-0 flex flex-col items-center justify-center">
-                    <span className="text-6xl font-bold">{formatTime(timerSeconds)}</span>
-                    <span className="text-lg text-white/60 capitalize mt-2">{timerMode.replace(/([A-Z])/g, " $1")}</span>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-4">
-                  <Button
-                    size="lg"
-                    onClick={() => setTimerRunning(!timerRunning)}
-                    className="gap-2 min-w-[150px] text-lg"
-                  >
-                    {timerRunning ? <Pause className="w-6 h-6" /> : <Play className="w-6 h-6" />}
-                    {timerRunning ? "Pause" : "Start"}
-                  </Button>
-                  <Button variant="outline" size="icon" onClick={resetTimer} className="border-white/20 hover:bg-white/10">
-                    <RotateCcw className="w-5 h-5" />
-                  </Button>
-                </div>
-
-                <p className="text-white/40 text-sm">Press ESC or click X to exit Battle Mode</p>
-              </div>
-            </div>
-          </DialogContent>
-        </Dialog>
-
-        <Dialog open={showShortcuts} onOpenChange={setShowShortcuts}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Keyboard Shortcuts</DialogTitle>
-            </DialogHeader>
-            <div className="space-y-2">
-              {[
-                { key: "Space", action: "Start/Pause Timer" },
-                { key: "R", action: "Reset Timer" },
-                { key: "B", action: "Toggle Battle Mode" },
-                { key: "T", action: "Add New Task" },
-                { key: "N", action: "Add New Note" },
-                { key: "D", action: "Toggle Dark Mode" },
-                { key: "?", action: "Show Shortcuts" },
-              ].map((shortcut) => (
-                <div key={shortcut.key} className="flex items-center justify-between py-2">
-                  <span className="text-muted-foreground">{shortcut.action}</span>
-                  <kbd className="px-2 py-1 rounded bg-muted text-sm font-mono">{shortcut.key}</kbd>
-                </div>
-              ))}
-            </div>
+            </DialogFooter>
           </DialogContent>
         </Dialog>
       </div>

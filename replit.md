@@ -43,27 +43,37 @@ The application implements a hybrid design approach combining:
 ### Backend Architecture
 
 **Server Framework**: Express.js with TypeScript
-- Minimal REST API footprint focused on AI chat functionality
-- Primary data persistence happens client-side via IndexedDB
+- Full REST API with comprehensive endpoints for all features
+- PostgreSQL database with Drizzle ORM for data persistence
+- Session-based authentication with bcrypt password hashing
 
 **Key Architectural Choices**:
 
-1. **Client-Side Data Storage**: 
-   - Uses IndexedDB for all user data persistence
-   - Rationale: Eliminates database infrastructure requirements, enables offline functionality, reduces server complexity
-   - Trade-offs: Data not synced across devices, potential data loss if browser storage cleared
-   - Implementation: `/client/src/lib/db.ts` contains all CRUD operations for entities (users, subjects, exams, tasks, flashcards, etc.)
+1. **Server-Side Data Storage**: 
+   - Uses PostgreSQL database via Drizzle ORM
+   - All data persisted on server, synced across devices
+   - Implementation: `/server/storage.ts` contains all CRUD operations
 
 2. **Authentication Strategy**:
-   - Local authentication with localStorage-based tokens
-   - Password stored in plain text in IndexedDB (development/demo approach)
-   - No server-side session management
-   - Implementation: `/client/src/lib/auth.ts` handles signup, login, logout, profile management
+   - Server-side session management with express-session
+   - Passwords hashed with bcrypt before storage
+   - Session tokens stored in localStorage for API requests
+   - Implementation: `/client/src/lib/api.ts` handles all API calls with auth headers
 
 3. **API Endpoints**:
-   - `/api/ai/chat` - OpenAI integration for study assistance (uses GPT-5 model)
-   - Static file serving for production builds
-   - All other operations (tasks, subjects, exams, etc.) handled client-side
+   - `/api/auth/*` - Authentication (login, signup, logout, profile)
+   - `/api/subjects/*` - Subject CRUD operations
+   - `/api/exams/*` - Exam management
+   - `/api/tasks/*` - Task management with priority and status
+   - `/api/notes/*` - Collaborative notes with sharing (viewer/commenter/editor roles)
+   - `/api/calendar/*` - Calendar events with sharing and reminders
+   - `/api/notifications/*` - Notification system for shares, reminders, due dates
+   - `/api/flashcards/*` - Spaced repetition flashcards
+   - `/api/sticky-notes/*` - Quick personal notes
+   - `/api/journal/*` - Study journal with mood tracking
+   - `/api/rewards/*` - Gamification rewards
+   - `/api/ai/chat` - Gemini AI integration for study assistance
+   - `/api/stats/*` - User statistics (streak, focus time, tasks completed)
 
 **Build System**:
 - Development: Vite dev server with HMR
@@ -121,27 +131,31 @@ The application uses Zod schemas for validation (`shared/schema.ts`) with the fo
 
 ### AI Integration
 
-**Provider**: OpenAI GPT-5
-**Implementation**: `/server/routes.ts` - single POST endpoint
+**Provider**: Google Gemini (gemini-2.5-flash)
+**Implementation**: `/server/routes.ts` - POST endpoint with user context
 
 **AI Study Assistant Features**:
-- Concept explanations
-- Quiz generation
-- Study plan creation
-- Note summarization
-- Motivational support
+- Concept explanations with access to user's subjects
+- Personalized quiz generation based on user's flashcards
+- Study plan creation using calendar and task data
+- Context-aware assistance with access to notes, analytics, and progress
+- Motivational support based on streak and study time data
 
-**Rate Limiting**:
-- Free users: 50 messages/day
-- Counter resets at midnight
-- Premium users: unlimited (tracked client-side)
+**User Context Integration**:
+The AI has access to:
+- User's subjects and topics
+- Pending tasks and calendar events
+- Flashcard collections
+- Study streak and focus time statistics
+- Notes content for context-aware help
 
 **System Prompt Design**:
 The AI is configured as "StudyFlow AI" with specific instructions to:
 - Provide concise, student-friendly explanations
 - Generate practical study resources
+- Personalize responses using user's actual data
 - Maintain encouraging tone
-- Focus on academic assistance
+- Help organize tasks and calendar
 
 ## External Dependencies
 
@@ -184,16 +198,28 @@ The AI is configured as "StudyFlow AI" with specific instructions to:
 
 ### Database & Persistence
 
-**Current**: IndexedDB (browser-based NoSQL database)
-- No external database server required
-- All data stored locally in user's browser
-- Implemented via native IndexedDB API in `/client/src/lib/db.ts`
+**Current**: PostgreSQL with Drizzle ORM
+- Full relational database with proper schema
+- Connection via `DATABASE_URL` environment variable
+- Drizzle ORM for type-safe database operations
+- Schema defined in `shared/schema.ts` with full types
 
-**Future Migration Path**:
-- `drizzle.config.ts` configured for PostgreSQL
-- Schema defined in `shared/schema.ts` is Drizzle-compatible
-- Can add PostgreSQL later without major refactoring
-- Connection would use `DATABASE_URL` environment variable
+**Database Schema**:
+- `users` - User accounts with authentication and stats
+- `subjects` - Academic subjects with progress tracking
+- `exams` - Exam tracking with confidence levels
+- `tasks` - Tasks with priority, status, due dates
+- `notes` - Collaborative notes with rich content
+- `note_shares` - Note sharing with role-based access
+- `note_comments` - Comments on shared notes
+- `calendar_events` - Events, tasks, reminders with sharing
+- `event_shares` - Calendar sharing invitations
+- `notifications` - System notifications
+- `flashcards` - Spaced repetition cards
+- `sticky_notes` - Quick personal notes
+- `journal_entries` - Mood and study journal
+- `rewards` - Gamification rewards
+- `ai_messages` - AI conversation history
 
 ### External Services
 
