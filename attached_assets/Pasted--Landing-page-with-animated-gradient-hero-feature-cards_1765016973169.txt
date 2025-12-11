@@ -1,0 +1,63 @@
+* Landing page with animated gradient hero, feature cards, testimonials slider, and dark mode toggle
+
+* User authentication system with signup, login, and persistent sessions using localStorage
+
+* User profile management with edit profile, account deletion with email confirmation, and logout
+
+* First-time setup wizard (3 steps): Add subjects with custom color picker → Link Google Drive folder URLs → Set first exam dates
+
+* Dashboard with huge animated countdown banner to nearest exam showing days/hours/minutes remaining
+
+* Today's Focus auto-section at top showing tasks due today, in-progress items, and highest priority tasks
+
+* Pomodoro Pro Timer with customizable work/break intervals, circular progress ring, notifications, and daily focus tracking
+
+* AI Study Assistant chat interface with message limits (50/day free, counter with midnight reset) and study-focused responses
+
+* AI Practice Quiz Generator: paste notes → AI generates 10-50 customizable MCQs and true/false questions with answer key
+
+* Explain Like I'm 5 button in AI chat - one-click to simplify any AI response into child-friendly language
+
+* Master Tasks System with subject categorization, priority levels, due dates, tags, and dual view (table + calendar)
+
+* Weekly study schedule with drag-and-drop time blocks and color-coded subjects using custom subject colors
+
+* Printable Revision Timetable PDF generator - beautiful one-page weekly overview optimized for printing
+
+* Exam countdown center with days-left tracking, confidence meters, and one-click Google Drive folder buttons per exam
+
+* Subject progress dashboard with topic tracking, custom color-coded progress bars, Chart.js visualizations, Google Drive links, and study hours rollup
+
+* Weak Topics Heatmap that auto-detects and highlights subjects/topics with lowest progress percentages and confidence ratings
+
+* Weekly/Monthly Analytics page with beautiful charts showing hours per subject, productivity heatmap, and best study times
+
+* Custom Reward Tracker where users create 'Complete X tasks → Get Y reward' goals with progress tracking
+
+* Draggable and resizable sticky notes board with position/color persistence
+
+* Battle Mode toggle - one-click full-screen black interface with only Pomodoro, today's tasks, focus music, and countdown
+
+* Emergency Cram button that auto-generates 4-8 hour intensive study schedule, starts Pomodoro, and loads intense playlist
+
+* Gamification system with daily streaks, achievement badges, and full-screen confetti + sound on major milestones (7/14/30 day streaks, 100 tasks completed)
+
+* Flashcard creator with proper spaced repetition using Leitner algorithm, due dates, and Again/Hard/Good/Easy review buttons
+
+* Focus music player with lo-fi, rain, and café ambient sounds plus YouTube embed
+
+* Smart health reminders: Hydration, stretch, and eye-break cute animated popups every 45-60 minutes with variety
+
+* Daily motivational quote with matching background image (365 unique quote/wallpaper combinations, changes daily)
+
+* Daily reflection journal with mood tracker
+
+* Export Everything as PDF button - one-click beautiful PDF export of tasks, schedule, progress charts, and notes
+
+* Keyboard shortcuts system with ? key overlay showing all shortcuts (n=new task, p=start Pomodoro, q=new quiz, etc.)
+
+* Premium upgrade system with feature gates and upgrade prompts to gallium.bot@gmail.com
+
+* Responsive design with glassmorphism UI, neon accents, smooth dark/light mode transitions, and mobile-optimized interactions
+
+* Complete data persistence using IndexedDB for all user data including tasks, notes, schedules, subjects, rewards, quizzes, and preferences

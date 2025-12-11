@@ -1,0 +1,204 @@
+1. Landing Page (index.html)
+
+Epic hero with animated gradient background, countdown timer to next exam (editable later), tagline "The Only Study App That Feels Like Cheating (Legally)"
+
+Feature cards with icons, testimonials slider, 50k+ students fake counter
+
+Navbar: Login | Get Started (→ signup) | Dark mode toggle
+
+
+
+2. Full Authentication System (edited)
+
+signup.html → Name, Email, Password → NO verification code. Signup completes immediately (show welcome modal / success animation). Do not generate or display a 6-digit code and do not pretend to send an email verification code.
+
+login.html → Email + Password + "Forgot password?"
+
+Password reset is disabled. The "Forgot password?" control should not kick off any reset flow. Instead it should show a clear, friendly modal/toast: "Password reset is currently unavailable in this demo. Please contact support (mailto:gallium.bot@gmail.com) for help." (No reset link, no password emails.)
+
+
+Persistent login forever (localStorage JWT-style token)
+
+Hamburger menu (after login): Profile picture/initials → Edit Name, Upgrade to Premium (mailto:gallium.bot@gmail.com), Logout, Delete Account
+
+Delete Account flow (edited): When user chooses Delete Account, show a confirmation modal that asks them to enter their email address (the account email) to confirm deletion. On correct match, proceed to delete account and show fireworks-sad animation. (No "type DELETE" step, no verification code required — only the account email input is required to confirm deletion.)
+
+
+
+
+3. MAIN DASHBOARD (dashboard.html – the Notion killer) After login → instantly load or create their personal dashboard with these FULLY WORKING sections:
+
+• Pomodoro Pro Timer
+
+Custom work/break/long-break sliders
+
+Beautiful circular timer with progress ring
+
+Desktop + browser notification + sound (ding + optional lo-fi)
+
+Auto-starts next session, tracks total focus time today
+
+
+• AI Study Assistant (floating chat bubble, always visible)
+
+50 messages/day free → unlimited for Premium
+
+Counter + reset at midnight
+
+Smart features (type anything): – "Explain photosynthesis in 3 lines" – "Make me a 20-question quiz on WWII" – "Summarize my biology notes" (paste text) – "Create a revision timetable for 5 exams in 12 days"
+
+Use any free API you want OR a huge built-in response engine with 1000+ study templates
+
+Premium banner when limit reached → "Email gallium.bot@gmail.com for unlimited"
+
+
+• Master Tasks System
+
+Add tasks with Subject, Name, Priority (🔥⚡⚠️✅), Due Date, Estimated Minutes, Tags
+
+Two live views: Table + FullCalendar monthly view
+
+Drag-to-reorder, swipe on mobile to complete/delete
+
+Confetti + sound when task completed
+
+
+• Study Schedule (Weekly Timetable)
+
+Drag-and-drop time blocks (6 AM – 3 AM)
+
+Color-coded by subject, auto-snap to 30-min grid
+
+
+• Exam Countdown Center
+
+Add exams → auto "Days Left" countdown banners
+
+Confidence meter, weight %, Google Drive folder link (one-click open)
+
+
+• Subject Progress Dashboard
+
+Add subjects → set total topics → mark covered → live progress bars + Chart.js donuts
+
+Study hours rollup, predicted grade calculator, weak areas notes
+
+
+• Sticky Notes Board
+
+Draggable, resizable, colorful sticky notes that save position/color/text
+
+
+• Battle Mode (one click → full-screen black background, only Pomodoro + today’s tasks + lo-fi player)
+
+• Gamification & Rewards
+
+Daily streak fire counter
+
+Badges (Night Owl, Marathon, Perfect Week, etc.)
+
+Reward system: "Complete 15 tasks → Watch one episode guilt-free"
+
+
+• Extra Insane Features (add ALL of these)
+
+now?
+
+* Landing page with animated gradient hero, feature cards, testimonials slider, and dark mode toggle
+
+* User authentication system with signup, login, and persistent sessions using localStorage
+
+* User profile management with edit profile, account deletion with email confirmation, and logout
+
+* First-time setup wizard (3 steps): Add subjects with custom color picker → Link Google Drive folder URLs → Set first exam dates
+
+* Dashboard with huge animated countdown banner to nearest exam showing days/hours/minutes remaining
+
+* Today's Focus auto-section at top showing tasks due today, in-progress items, and highest priority tasks
+
+* Pomodoro Pro Timer with customizable work/break intervals, circular progress ring, notifications, and daily focus tracking
+
+* AI Study Assistant chat interface with message limits (50/day free, counter with midnight reset) and study-focused responses
+
+* AI Practice Quiz Generator: paste notes → AI generates 10-50 customizable MCQs and true/false questions with answer key
+
+* Explain Like I'm 5 button in AI chat - one-click to simplify any AI response into child-friendly language
+
+* Master Tasks System with subject categorization, priority levels, due dates, tags, and dual view (table + calendar)
+
+* Weekly study schedule with drag-and-drop time blocks and color-coded subjects using custom subject colors
+
+* Printable Revision Timetable PDF generator - beautiful one-page weekly overview optimized for printing
+
+* Exam countdown center with days-left tracking, confidence meters, and one-click Google Drive folder buttons per exam
+
+* Subject progress dashboard with topic tracking, custom color-coded progress bars, Chart.js visualizations, Google Drive links, and study hours rollup
+
+* Weak Topics Heatmap that auto-detects and highlights subjects/topics with lowest progress percentages and confidence ratings
+
+* Weekly/Monthly Analytics page with beautiful charts showing hours per subject, productivity heatmap, and best study times
+
+* Custom Reward Tracker where users create 'Complete X tasks → Get Y reward' goals with progress tracking
+
+* Draggable and resizable sticky notes board with position/color persistence
+
+* Battle Mode toggle - one-click full-screen black interface with only Pomodoro, today's tasks, focus music, and countdown
+
+* Emergency Cram button that auto-generates 4-8 hour intensive study schedule, starts Pomodoro, and loads intense playlist
+
+* Gamification system with daily streaks, achievement badges, and full-screen confetti + sound on major milestones (7/14/30 day streaks, 100 tasks completed)
+
+* Flashcard creator with proper spaced repetition using Leitner algorithm, due dates, and Again/Hard/Good/Easy review buttons
+
+* Focus music player with lo-fi, rain, and café ambient sounds plus YouTube embed
+
+* Smart health reminders: Hydration, stretch, and eye-break cute animated popups every 45-60 minutes with variety
+
+* Daily motivational quote with matching background image (365 unique quote/wallpaper combinations, changes daily)
+
+* Daily reflection journal with mood tracker
+
+* Export Everything as PDF button - one-click beautiful PDF export of tasks, schedule, progress charts, and notes
+
+* Keyboard shortcuts system with ? key overlay showing all shortcuts (n=new task, p=start Pomodoro, q=new quiz, etc.)
+
+* Premium upgrade system with feature gates and upgrade prompts to gallium.bot@gmail.com
+
+* Responsive design with glassmorphism UI, neon accents, smooth dark/light mode transitions, and mobile-optimized interactions
+
+* Complete data persistence using IndexedDB for all user data including tasks, notes, schedules, subjects, rewards, quizzes, and preferences
+
+
+
+
+4. Premium System
+
+Free: 50 AI messages/day, max 5 subjects
+
+Premium (after emailing gallium.bot@gmail.com and you manually flip localStorage "isPremium": true): unlimited everything + exclusive themes + analytics
+
+Big upgrade buttons everywhere when limits hit
+
+
+
+5. Tech & Polish Requirements
+
+100% responsive (looks perfect on phone)
+
+Dark/light mode with smooth transition
+
+Glassmorphism + neon accents + micro-interactions everywhere
+
+All data saved in IndexedDB (so even 1000 tasks survive refresh)
+
+Use CDN for: Chart.js, FullCalendar, confetti.js, sweetalert2, toastify, wavesurfer (sounds), etc.
+
+First-time user gets a 6-step interactive tour
+
+
+
+6. File structure Create every file needed: index.html, login.html, signup.html, dashboard.html, style.css, script.js (or split), assets folder for sounds/icons.
+
+
+
+Make this the most over-the-top, addictive, beautiful study web app ever created. Students should open it and say "holy sh*t". Add surprise easter eggs, motivational quotes that change daily, and make every interaction feel magical.
