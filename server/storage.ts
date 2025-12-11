@@ -21,43 +21,43 @@ import { randomUUID } from "crypto";
 
 export interface IStorage {
   // User operations
-  getUser(id: number): Promise<User | undefined>;
+  getUser(id: string): Promise<User | undefined>;
   getUserByEmail(email: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
-  updateUser(id: number, updates: Partial<User>): Promise<User | undefined>;
-  deleteUser(id: number): Promise<void>;
+  updateUser(id: string, updates: Partial<User>): Promise<User | undefined>;
+  deleteUser(id: string): Promise<void>;
   
   // Session operations
-  createSession(userId: number): Promise<Session>;
+  createSession(userId: string): Promise<Session>;
   getSession(id: string): Promise<Session | undefined>;
   deleteSession(id: string): Promise<void>;
-  deleteUserSessions(userId: number): Promise<void>;
+  deleteUserSessions(userId: string): Promise<void>;
   
   // Subject operations
-  getSubjects(userId: number): Promise<Subject[]>;
+  getSubjects(userId: string): Promise<Subject[]>;
   getSubject(id: number): Promise<Subject | undefined>;
   createSubject(subject: InsertSubject): Promise<Subject>;
   updateSubject(id: number, updates: Partial<Subject>): Promise<Subject | undefined>;
   deleteSubject(id: number): Promise<void>;
   
   // Exam operations
-  getExams(userId: number): Promise<Exam[]>;
+  getExams(userId: string): Promise<Exam[]>;
   getExam(id: number): Promise<Exam | undefined>;
   createExam(exam: InsertExam): Promise<Exam>;
   updateExam(id: number, updates: Partial<Exam>): Promise<Exam | undefined>;
   deleteExam(id: number): Promise<void>;
   
   // Task operations
-  getTasks(userId: number): Promise<Task[]>;
+  getTasks(userId: string): Promise<Task[]>;
   getTask(id: number): Promise<Task | undefined>;
   createTask(task: InsertTask): Promise<Task>;
   updateTask(id: number, updates: Partial<Task>): Promise<Task | undefined>;
   deleteTask(id: number): Promise<void>;
   
   // Note operations
-  getNotes(userId: number): Promise<Note[]>;
+  getNotes(userId: string): Promise<Note[]>;
   getNote(id: number): Promise<Note | undefined>;
-  getSharedNotes(userId: number): Promise<Note[]>;
+  getSharedNotes(userId: string): Promise<Note[]>;
   createNote(note: InsertNote): Promise<Note>;
   updateNote(id: number, updates: Partial<Note>): Promise<Note | undefined>;
   deleteNote(id: number): Promise<void>;
@@ -147,7 +147,7 @@ export interface IStorage {
 
 export class DatabaseStorage implements IStorage {
   // User operations
-  async getUser(id: number): Promise<User | undefined> {
+  async getUser(id: string): Promise<User | undefined> {
     const [user] = await db.select().from(users).where(eq(users.id, id));
     return user;
   }
@@ -159,14 +159,15 @@ export class DatabaseStorage implements IStorage {
 
   async createUser(insertUser: InsertUser): Promise<User> {
     const hashedPassword = await bcrypt.hash(insertUser.password, 10);
+    const id = randomUUID();
     const [user] = await db
       .insert(users)
-      .values({ ...insertUser, password: hashedPassword })
+      .values({ id, ...insertUser, password: hashedPassword })
       .returning();
     return user;
   }
 
-  async updateUser(id: number, updates: Partial<User>): Promise<User | undefined> {
+  async updateUser(id: string, updates: Partial<User>): Promise<User | undefined> {
     if (updates.password) {
       updates.password = await bcrypt.hash(updates.password, 10);
     }
@@ -174,12 +175,12 @@ export class DatabaseStorage implements IStorage {
     return user;
   }
 
-  async deleteUser(id: number): Promise<void> {
+  async deleteUser(id: string): Promise<void> {
     await db.delete(users).where(eq(users.id, id));
   }
 
   // Session operations
-  async createSession(userId: number): Promise<Session> {
+  async createSession(userId: string): Promise<Session> {
     const id = randomUUID();
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
     const [session] = await db.insert(sessions).values({ id, userId, expiresAt }).returning();
@@ -199,13 +200,14 @@ export class DatabaseStorage implements IStorage {
     await db.delete(sessions).where(eq(sessions.id, id));
   }
 
-  async deleteUserSessions(userId: number): Promise<void> {
+  async deleteUserSessions(userId: string): Promise<void> {
     await db.delete(sessions).where(eq(sessions.userId, userId));
   }
 
   // Subject operations
-  async getSubjects(userId: number): Promise<Subject[]> {
-    return db.select().from(subjects).where(eq(subjects.userId, userId)).orderBy(asc(subjects.name));
+  async getSubjects(userId: string): Promise<Subject[]> {
+    const userIdNum = parseInt(userId);
+    return db.select().from(subjects).where(eq(subjects.userId, userIdNum)).orderBy(asc(subjects.name));
   }
 
   async getSubject(id: number): Promise<Subject | undefined> {
