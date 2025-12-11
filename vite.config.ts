@@ -1,6 +1,5 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
-import tailwindcss from "@tailwindcss/vite";
 import path from "path";
 import { fileURLToPath } from "url";
 
@@ -9,9 +8,16 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export default defineConfig({
   plugins: [
     react(),
-    tailwindcss(),
     ...(process.env.REPL_ID ? [] : []),
   ],
+  css: {
+    postcss: {
+      plugins: [
+        (await import('tailwindcss')).default,
+        (await import('autoprefixer')).default,
+      ],
+    },
+  },
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "client", "src"),

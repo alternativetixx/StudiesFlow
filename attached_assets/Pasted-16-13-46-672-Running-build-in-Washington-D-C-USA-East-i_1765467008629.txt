@@ -1,0 +1,48 @@
+16:13:46.672 Running build in Washington, D.C., USA (East) – iad1
+16:13:46.672 Build machine configuration: 2 cores, 8 GB
+16:13:46.683 Cloning github.com/alternativetixx/StudiesFlow (Branch: main, Commit: 8e0fb90)
+16:13:46.684 Skipping build cache, deployment was triggered without cache.
+16:13:47.105 Cloning completed: 421.000ms
+16:13:47.559 Running "vercel build"
+16:13:47.971 Vercel CLI 49.1.2
+16:13:48.749 Running "install" command: `npm install`...
+16:13:53.839 npm warn deprecated @esbuild-kit/esm-loader@2.6.5: Merged into tsx: https://tsx.is
+16:13:53.887 npm warn deprecated @esbuild-kit/core-utils@3.3.2: Merged into tsx: https://tsx.is
+16:13:54.202 npm warn deprecated node-domexception@1.0.0: Use your platform's native DOMException instead
+16:14:01.040 
+16:14:01.041 added 596 packages, and audited 597 packages in 12s
+16:14:01.041 
+16:14:01.042 78 packages are looking for funding
+16:14:01.042   run `npm fund` for details
+16:14:01.068 
+16:14:01.068 12 vulnerabilities (3 low, 6 moderate, 3 high)
+16:14:01.070 
+16:14:01.070 To address issues that do not require attention, run:
+16:14:01.070   npm audit fix
+16:14:01.071 
+16:14:01.071 To address all issues (including breaking changes), run:
+16:14:01.071   npm audit fix --force
+16:14:01.072 
+16:14:01.072 Run `npm audit` for details.
+16:14:01.451 
+16:14:01.451 > rest-express@1.0.0 build:vercel
+16:14:01.452 > vite build
+16:14:01.452 
+16:14:02.238 [36mvite v5.4.20 [32mbuilding for production...[36m[39m
+16:14:02.300 transforming...
+16:14:02.347 [32m✓[39m 3 modules transformed.
+16:14:02.350 [31mx[39m Build failed in 82ms
+16:14:02.351 [31merror during build:
+16:14:02.351 [31m[@tailwindcss/vite:generate:build] Cannot apply unknown utility class: border-border[31m
+16:14:02.351 file: [36m/vercel/path0/client/src/index.css[31m
+16:14:02.351     at onInvalidCandidate (file:///vercel/path0/node_modules/@tailwindcss/node/node_modules/tailwindcss/dist/chunk-3NGYYP5F.mjs:20:348)
+16:14:02.351     at ue (file:///vercel/path0/node_modules/@tailwindcss/node/node_modules/tailwindcss/dist/chunk-3NGYYP5F.mjs:15:29593)
+16:14:02.351     at Ee (file:///vercel/path0/node_modules/@tailwindcss/node/node_modules/tailwindcss/dist/chunk-3NGYYP5F.mjs:20:311)
+16:14:02.352     at zr (file:///vercel/path0/node_modules/@tailwindcss/node/node_modules/tailwindcss/dist/chunk-3NGYYP5F.mjs:36:784)
+16:14:02.352     at async Hi (file:///vercel/path0/node_modules/@tailwindcss/node/node_modules/tailwindcss/dist/chunk-3NGYYP5F.mjs:36:1079)
+16:14:02.352     at async Xa (file:///vercel/path0/node_modules/@tailwindcss/node/node_modules/tailwindcss/dist/chunk-3NGYYP5F.mjs:36:1807)
+16:14:02.353     at async ta (file:///vercel/path0/node_modules/@tailwindcss/node/dist/index.mjs:12:3355)
+16:14:02.353     at async R.generate (file:///vercel/path0/node_modules/@tailwindcss/vite/dist/index.mjs:1:3511)
+16:14:02.353     at async Object.transform (file:///vercel/path0/node_modules/@tailwindcss/vite/dist/index.mjs:1:2313)
+16:14:02.353     at async transform (file:///vercel/path0/node_modules/rollup/dist/es/shared/node-entry.js:19640:16)[39m
+16:14:02.370 Error: Command "npm run build:vercel" exited with 1
