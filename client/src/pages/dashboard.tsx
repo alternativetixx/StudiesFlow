@@ -619,10 +619,10 @@ export default function DashboardPage() {
       const card = await api.createFlashcard({
         front: newFlashcardFront,
         back: newFlashcardBack,
-        subjectId: newFlashcardSubject ? parseInt(newFlashcardSubject) : null,
+        subjectId: newFlashcardSubject ? parseInt(newFlashcardSubject) : undefined,
         box: 1,
-        nextReviewDate: new Date(),
-        lastReviewDate: null,
+        nextReviewDate: new Date().toISOString(),
+        lastReviewDate: undefined,
       });
       setFlashcards([...flashcards, card]);
       setNewFlashcardFront("");
@@ -645,8 +645,8 @@ export default function DashboardPage() {
       nextDate.setDate(nextDate.getDate() + daysUntilReview);
       await api.updateFlashcard(card.id, {
         box: newBox,
-        lastReviewDate: new Date(),
-        nextReviewDate: nextDate,
+        lastReviewDate: new Date().toISOString(),
+        nextReviewDate: nextDate.toISOString(),
       });
       setShowFlashcardBack(false);
       if (currentFlashcardIndex < flashcards.length - 1) {
