@@ -1,0 +1,61 @@
+
+> rest-express@1.0.0 dev
+8:28:43 AM [express] serving on port 5000s
+
+A PostCSS plugin did not pass the `from` option to `postcss.parse`. This may cause imported assets to be incorrectly transformed. If you've recently added a PostCSS plugin that raised this warning, please contact the package author to fix the issue.
+8:28:59 AM [express] GET /api/auth/me 401 in 1067ms :: {"error":"User not found"}
+8:29:04 AM [express] POST /api/auth/login 200 in 331ms :: {"user":{"id":"4c25d533-0e77-45c0-a0fb-182815f30642","name":"Krishab","email":"z208608@a.iesmollvell.org","isPremium":false,"hasCompletedSetup":true,"createdAt":"2025-12-07T15:12:44.938Z","lastActiveDate":"2025-12-13T08:27:11.561Z","dailyStreak":1,"totalFocusMinutes":0,"todayFocusMinutes":0,"totalTasksCompleted":0,"aiMessagesToday":0,"aiMessagesLastReset":null,"badges":[],"googleCalendarToken":null,"googleCalendarRefreshToken":null},"sessionId":"bc5adf68-35d0-4414-a3ed-222f47182426"}
+8:29:05 AM [express] GET /api/auth/me 401 in 267ms :: {"error":"User not found"}
+8:29:32 AM [express] GET /api/auth/me 401 in 1047ms :: {"error":"User not found"}
+8:29:45 AM [express] POST /api/auth/login 200 in 1142ms :: {"user":{"id":"4c25d533-0e77-45c0-a0fb-182815f30642","name":"Krishab","email":"z208608@a.iesmollvell.org","isPremium":false,"hasCompletedSetup":true,"createdAt":"2025-12-07T15:12:44.938Z","lastActiveDate":"2025-12-13T08:27:11.561Z","dailyStreak":1,"totalFocusMinutes":0,"todayFocusMinutes":0,"totalTasksCompleted":0,"aiMessagesToday":0,"aiMessagesLastReset":null,"badges":[],"googleCalendarToken":null,"googleCalendarRefreshToken":null},"sessionId":"05221d88-d711-44ad-a6ba-e316246e4327"}
+8:29:46 AM [express] GET /api/auth/me 401 in 266ms :: {"error":"User not found"}
+Signup error: error: null value in column "id" of relation "users" violates not-null constraint
+    at /home/runner/workspace/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:104:19)
+    at async DatabaseStorage.createUser (/home/runner/workspace/server/storage.ts:162:20)
+    at async <anonymous> (/home/runner/workspace/server/routes.ts:61:20) {
+  length: 350,
+  severity: 'ERROR',
+  code: '23502',
+  detail: 'Failing row contains (null, 909, nkefhegvb@gsbh.com, $2b$10$DgEyWYK4ByoWaNTWdo/y/OsZbKZsNlDio2nw4dsHJ7YNdgXRmoOmO, f, f, 2025-12-13 08:30:17.740637, null, 0, 0, 0, 0, 0, null, [], null, null).',
+  hint: undefined,
+  position: undefined,
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: 'public',
+  table: 'users',
+  column: 'id',
+  dataType: undefined,
+  constraint: undefined,
+  file: 'execMain.c',
+  line: '2032',
+  routine: 'ExecConstraints'
+}
+8:30:17 AM [express] POST /api/auth/signup 500 in 1134ms :: {"error":"Failed to create account"}
+Signup error: error: null value in column "id" of relation "users" violates not-null constraint
+    at /home/runner/workspace/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:104:19)
+    at async DatabaseStorage.createUser (/home/runner/workspace/server/storage.ts:162:20)
+    at async <anonymous> (/home/runner/workspace/server/routes.ts:61:20) {
+  length: 350,
+  severity: 'ERROR',
+  code: '23502',
+  detail: 'Failing row contains (null, 909, nkefhegvb@gsbh.com, $2b$10$vCs.IqUWuXL9dpvx1nEAOO2i5ypDzN2nyzt5OmNGJmivsEnB5uLrK, f, f, 2025-12-13 08:30:35.179615, null, 0, 0, 0, 0, 0, null, [], null, null).',
+  hint: undefined,
+  position: undefined,
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: 'public',
+  table: 'users',
+  column: 'id',
+  dataType: undefined,
+  constraint: undefined,
+  file: 'execMain.c',
+  line: '2032',
+  routine: 'ExecConstraints'
+}
+8:30:35 AM [express] POST /api/auth/signup 500 in 1109ms :: {"error":"Failed to create account"}
