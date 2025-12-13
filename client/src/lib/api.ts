@@ -20,26 +20,50 @@ function clearSessionId(): void {
 
 async function fetchApi<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
   const sessionId = getSessionId();
+
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
-    ...options.headers as Record<string, string>,
+    ...(options.headers as Record<string, string> ?? {}),
   };
-  
+
   if (sessionId) {
     headers.Authorization = `Bearer ${sessionId}`;
   }
-  
-  const response = await fetch(endpoint, {
-    ...options,
-    headers,
-  });
-  
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: "Request failed" }));
-    throw new Error(error.error || error.message || "Request failed");
+
+  try {
+    const response = await fetch(endpoint, {
+      ...options,
+      headers,
+    });
+
+    if (!response.ok) {
+      let errorData: any;
+      try {
+        errorData = await response.json();
+      } catch {
+        errorData = { error: "Request failed" };
+      }
+      throw new Error(
+        errorData.error || errorData.message || `HTTP ${response.status}: Request failed`
+      );
+    }
+
+    return await response.json();
+  } catch (error) {
+    if (error instanceof TypeError && error.message.includes("Failed to fetch")) {
+      // Network error, no internet, server down, CORS issue, etc.
+      throw new Error(
+        "I'm having trouble connecting right now. Please check your internet connection and try again in a moment!"
+      );
+    }
+
+    // Re-throw other errors (including custom API errors)
+    if (error instanceof Error) {
+      throw error;
+    }
+
+    throw new Error("An unexpected error occurred. Please try again.");
   }
-  
-  return response.json();
 }
 
 // Auth API
@@ -72,7 +96,7 @@ export async function logout(): Promise<void> {
 export async function getCurrentUser(): Promise<User | null> {
   const sessionId = getSessionId();
   if (!sessionId) return null;
-  
+
   try {
     const result = await fetchApi<{ user: User }>("/api/auth/me");
     return result.user;
