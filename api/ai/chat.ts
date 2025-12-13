@@ -1,8 +1,8 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import OpenAI from 'openai';
+import { GoogleGenAI } from '@google/genai';
 
-const openai = process.env.OPENAI_API_KEY 
-  ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+const genAI = process.env.GEMINI_API_KEY 
+  ? new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY })
   : null;
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -17,36 +17,33 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(400).json({ error: 'Message is required' });
     }
 
-    if (!openai) {
+    if (!genAI) {
       return res.status(503).json({ 
         error: 'AI service not configured',
-        message: 'The AI assistant is currently unavailable. Please configure OPENAI_API_KEY.'
+        message: 'The AI assistant is currently unavailable. Please configure GEMINI_API_KEY.'
       });
     }
 
-    const response = await openai.chat.completions.create({
-      model: 'gpt-4o',
-      messages: [
-        {
-          role: 'system',
-          content: `You are StudyFlow AI, a friendly and knowledgeable study assistant. You help students:
+    const systemPrompt = `You are StudyFlow AI, a friendly and knowledgeable study assistant. You help students:
 - Understand complex concepts in simple terms
 - Create study plans and schedules
 - Generate quiz questions and flashcards
 - Provide motivation and study tips
 - Answer questions about any academic subject
 
-Be encouraging, concise, and helpful. Use clear explanations and examples when needed. Keep responses focused and practical for students.`
-        },
+Be encouraging, concise, and helpful. Use clear explanations and examples when needed. Keep responses focused and practical for students.`;
+
+    const response = await genAI.models.generateContent({
+      model: 'gemini-2.0-flash',
+      contents: [
         {
           role: 'user',
-          content: message
+          parts: [{ text: `${systemPrompt}\n\nUser message: ${message}` }]
         }
       ],
-      max_tokens: 1024,
     });
 
-    const aiMessage = response.choices[0]?.message?.content || "I'm here to help with your studies! Feel free to ask me anything.";
+    const aiMessage = response.text || "I'm here to help with your studies! Feel free to ask me anything.";
     
     res.json({ message: aiMessage });
   } catch (error: any) {

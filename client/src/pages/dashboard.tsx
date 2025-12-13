@@ -619,9 +619,10 @@ export default function DashboardPage() {
       const card = await api.createFlashcard({
         front: newFlashcardFront,
         back: newFlashcardBack,
-        subjectId: newFlashcardSubject ? parseInt(newFlashcardSubject) : undefined,
+        subjectId: newFlashcardSubject ? parseInt(newFlashcardSubject) : null,
         box: 1,
-        nextReviewDate: new Date().toISOString(),
+        nextReviewDate: new Date(),
+        lastReviewDate: null,
       });
       setFlashcards([...flashcards, card]);
       setNewFlashcardFront("");
@@ -644,8 +645,8 @@ export default function DashboardPage() {
       nextDate.setDate(nextDate.getDate() + daysUntilReview);
       await api.updateFlashcard(card.id, {
         box: newBox,
-        lastReviewDate: new Date().toISOString(),
-        nextReviewDate: nextDate.toISOString(),
+        lastReviewDate: new Date(),
+        nextReviewDate: nextDate,
       });
       setShowFlashcardBack(false);
       if (currentFlashcardIndex < flashcards.length - 1) {
@@ -730,9 +731,9 @@ export default function DashboardPage() {
       .slice(0, 3);
   };
 
-  const getDaysUntil = (dateStr: string) => {
+  const getDaysUntil = (dateInput: Date | string) => {
     const now = new Date();
-    const date = new Date(dateStr);
+    const date = typeof dateInput === 'string' ? new Date(dateInput) : dateInput;
     const diff = date.getTime() - now.getTime();
     return Math.ceil(diff / (1000 * 60 * 60 * 24));
   };
