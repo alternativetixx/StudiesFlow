@@ -5,7 +5,7 @@ import { z } from "zod";
 
 // Users table
 export const users = pgTable("users", {
-  id: text("id").primaryKey(),
+  id: serial("id").primaryKey(),
   name: text("name").notNull(),
   email: text("email").notNull().unique(),
   password: text("password").notNull(),
@@ -41,7 +41,7 @@ export const usersRelations = relations(users, ({ many }) => ({
 // Sessions table for auth
 export const sessions = pgTable("sessions", {
   id: text("id").primaryKey(),
-  userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   expiresAt: timestamp("expires_at").notNull(),
 });
 
