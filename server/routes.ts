@@ -893,24 +893,34 @@ export async function registerRoutes(
         return res.json({ message: fallbackMessage });
       }
 
-      // Get user context for personalized responses
-      const [subjects, tasks, flashcards, calendarEvents] = await Promise.all([
-        storage.getSubjects(user.id),
-        storage.getTasks(user.id),
-        storage.getFlashcards(user.id),
-        storage.getCalendarEvents(user.id)
-      ]);
+      // Get user context for personalized responses (with error handling)
+      const sanitize = (str: string) => str?.replace(/["\n\r]/g, ' ').slice(0, 100) || '';
+      
+      let subjects: any[] = [], tasks: any[] = [], flashcards: any[] = [], calendarEvents: any[] = [], notes: any[] = [], exams: any[] = [];
+      try {
+        [subjects, tasks, flashcards, calendarEvents, notes, exams] = await Promise.all([
+          storage.getSubjects(user.id),
+          storage.getTasks(user.id),
+          storage.getFlashcards(user.id),
+          storage.getCalendarEvents(user.id),
+          storage.getNotes(user.id),
+          storage.getExams(user.id)
+        ]);
+      } catch (err) {
+        console.error("Failed to load user context for AI:", err);
+      }
+
+      const pendingTasks = tasks.filter(t => t.status !== "completed").slice(0, 5);
+      const upcomingExams = exams.filter(e => new Date(e.date) > new Date()).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()).slice(0, 3);
+      const upcomingEvents = calendarEvents.filter(e => new Date(e.startTime) > new Date()).sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime()).slice(0, 3);
 
       const userContext = `
-User Information:
-- Name: ${user.name}
-- Email: ${user.email}
-- Subjects: ${subjects.map(s => s.name).join(", ") || "None yet"}
-- Pending Tasks: ${tasks.filter(t => t.status !== "completed").length}
-- Flashcards: ${flashcards.length}
-- Upcoming Events: ${calendarEvents.filter(e => new Date(e.startTime) > new Date()).length}
-- Daily Streak: ${user.dailyStreak || 0} days
-- Total Study Time: ${user.totalFocusMinutes || 0} minutes
+User: ${sanitize(user.name)}, Streak: ${user.dailyStreak || 0} days, Study Time: ${Math.round((user.totalFocusMinutes || 0) / 60)}h
+Subjects (${subjects.length}): ${subjects.slice(0, 5).map(s => sanitize(s.name)).join(', ') || 'None'}
+Pending Tasks (${tasks.filter(t => t.status !== "completed").length}): ${pendingTasks.map(t => sanitize(t.title)).join(', ') || 'None'}
+Upcoming Exams (${exams.filter(e => new Date(e.date) > new Date()).length}): ${upcomingExams.map(e => `${sanitize(e.name)} (${new Date(e.date).toLocaleDateString()})`).join(', ') || 'None'}
+Events (${calendarEvents.filter(e => new Date(e.startTime) > new Date()).length}): ${upcomingEvents.map(e => sanitize(e.title)).join(', ') || 'None'}
+Notes: ${notes.length}, Flashcards: ${flashcards.length}
 `;
 
       const systemPrompt = `You are StudyFlow AI, a friendly and knowledgeable study assistant. You have access to the following information about the user:

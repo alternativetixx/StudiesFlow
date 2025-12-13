@@ -103,7 +103,15 @@ export async function getSubjects(): Promise<Subject[]> {
   return fetchApi<Subject[]>("/api/subjects");
 }
 
-export async function createSubject(subject: Omit<Subject, "id" | "userId" | "createdAt">): Promise<Subject> {
+export async function createSubject(subject: {
+  name: string;
+  color: string;
+  totalTopics?: number;
+  coveredTopics?: number;
+  studyHours?: number;
+  googleDriveUrl?: string | null;
+  weakAreas?: string | null;
+}): Promise<Subject> {
   return fetchApi<Subject>("/api/subjects", {
     method: "POST",
     body: JSON.stringify(subject),
@@ -126,7 +134,14 @@ export async function getExams(): Promise<Exam[]> {
   return fetchApi<Exam[]>("/api/exams");
 }
 
-export async function createExam(exam: Omit<Exam, "id" | "userId" | "createdAt">): Promise<Exam> {
+export async function createExam(exam: {
+  name: string;
+  date: string;
+  subjectId?: number | null;
+  confidence?: number;
+  weight?: number;
+  googleDriveUrl?: string | null;
+}): Promise<Exam> {
   return fetchApi<Exam>("/api/exams", {
     method: "POST",
     body: JSON.stringify(exam),
@@ -149,7 +164,18 @@ export async function getTasks(): Promise<Task[]> {
   return fetchApi<Task[]>("/api/tasks");
 }
 
-export async function createTask(task: Omit<Task, "id" | "userId" | "createdAt">): Promise<Task> {
+export async function createTask(task: {
+  title: string;
+  description?: string | null;
+  priority?: "critical" | "high" | "medium" | "low";
+  status?: "pending" | "in_progress" | "completed";
+  subjectId?: number | null;
+  dueDate?: string | null;
+  estimatedMinutes?: number | null;
+  tags?: string[];
+  order?: number;
+  completedAt?: string | null;
+}): Promise<Task> {
   return fetchApi<Task>("/api/tasks", {
     method: "POST",
     body: JSON.stringify(task),
@@ -228,7 +254,19 @@ export async function getCalendarEvents(start?: string, end?: string): Promise<{
   return fetchApi<{ ownEvents: CalendarEvent[]; sharedEvents: CalendarEvent[] }>(`/api/calendar${query}`);
 }
 
-export async function createCalendarEvent(event: Omit<CalendarEvent, "id" | "userId" | "createdAt" | "updatedAt">): Promise<CalendarEvent> {
+export async function createCalendarEvent(event: {
+  title: string;
+  description?: string | null;
+  type?: "event" | "task" | "reminder";
+  startTime: string;
+  endTime?: string | null;
+  allDay?: boolean;
+  color?: string | null;
+  subjectId?: number | null;
+  googleEventId?: string | null;
+  recurrence?: string | null;
+  reminderMinutes?: number | null;
+}): Promise<CalendarEvent> {
   return fetchApi<CalendarEvent>("/api/calendar", {
     method: "POST",
     body: JSON.stringify(event),
