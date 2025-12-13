@@ -223,7 +223,7 @@ The AI is configured as "StudyFlow AI" with specific instructions to:
 
 ### External Services
 
-- **OpenAI API**: Requires `OPENAI_API_KEY` environment variable for GPT-5 access
+- **Gemini API**: Requires `GEMINI_API_KEY` environment variable for GEMINI access
 - **Google Fonts**: Inter and Space Grotesk font families loaded via CDN
 - **Google Drive**: Users manually link folder URLs (no API integration, just hyperlinks)
 
